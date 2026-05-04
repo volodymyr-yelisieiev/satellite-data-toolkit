@@ -1,0 +1,237 @@
+# Packaging Guide
+
+This project is cross-platform by design, but packaging must be performed on native target systems.
+
+Current verified state:
+
+- macOS Apple Silicon: built and locally verified.
+- Windows: configured only; not built or installed on Windows in this workspace.
+
+## Build-Time Requirements
+
+End users do not need these tools. They are only required to build the app from source.
+
+| Tool | Version/Requirement |
+| --- | --- |
+| Node.js | `.node-version` pins `24.13.0`; `package.json` allows `>=22.12.0` |
+| npm | `packageManager` pins `npm@11.6.2`; `package.json` allows `>=11.0.0` |
+| Rust | `rust-toolchain.toml` pins `1.95.0` with `clippy` and `rustfmt` |
+| Tauri CLI | `@tauri-apps/cli` pinned in `package-lock.json` |
+| macOS | Xcode Command Line Tools, `codesign`, `hdiutil`; Developer ID credentials for public release |
+| Windows | Windows 10/11, MSVC Rust toolchain, C++ Build Tools/Windows SDK, code-signing certificate |
+
+macOS Homebrew setup used for this workstation:
+
+```bash
+brew install node rustup
+export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+rustup default 1.95.0
+rustup component add clippy rustfmt
+npm ci
+```
+
+## Verification Before Packaging
+
+Run:
+
+```bash
+./scripts/verify.sh
+```
+
+This fails fast if Node, npm, or Cargo is unavailable, then runs:
+
+```text
+npm run build
+cargo test --workspace --locked
+cargo check --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+npm audit --omit=dev
+```
+
+Recommended additions before public release:
+
+```bash
+cargo audit
+cargo deny check
+npm audit
+```
+
+The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
+
+## macOS Local Review Build
+
+Build:
+
+```bash
+./scripts/build-macos.sh
+```
+
+Expected outputs:
+
+```text
+target/release/bundle/macos/Satellite Data Toolkit.app
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.0_aarch64.dmg
+```
+
+The script:
+
+- installs npm dependencies with `npm ci`;
+- builds TypeScript/Vite assets;
+- runs `tauri build --bundles app,dmg`;
+- applies ad-hoc signing to the `.app`;
+- verifies with `codesign --verify --deep --strict --verbose=2`;
+- rebuilds the DMG with the `.app` and an `/Applications` symlink;
+- verifies the DMG with `hdiutil verify`.
+
+Current limitation: the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It is suitable for private review, not public distribution.
+
+## macOS Public Release Checklist
+
+For a public DMG:
+
+1. Build on a clean macOS runner.
+2. Sign the app and all nested binaries with an Apple Developer ID Application certificate.
+3. Enable hardened runtime.
+4. Sign any sidecars, including EUMDAC.
+5. Notarize the app/DMG with Apple.
+6. Staple the ticket.
+7. Verify:
+
+```bash
+codesign --verify --deep --strict --verbose=2 "Satellite Data Toolkit.app"
+spctl --assess --type execute --verbose=4 "Satellite Data Toolkit.app"
+xcrun stapler validate "Satellite Data Toolkit.app"
+hdiutil verify "Satellite Data Toolkit_2.1.0_aarch64.dmg"
+spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.0_aarch64.dmg"
+```
+
+8. Test first launch from a clean user profile with no internet.
+9. Test NASA fetch, save, export, API slots, PV local estimate, and NDVI sample.
+10. Test app data removal and uninstall behavior.
+
+Known current macOS public-release gaps:
+
+- no Developer ID certificate configured;
+- no notarization credentials configured;
+- no stapled ticket;
+- no signed EUMDAC sidecar;
+- no Intel/universal build validation.
+
+## Windows Build
+
+Run only on Windows 10/11 with the MSVC Rust toolchain:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+Expected outputs:
+
+```text
+target\release\bundle\msi\
+target\release\bundle\nsis\
+```
+
+The Tauri config currently enables:
+
+```json
+"targets": ["app", "dmg", "msi", "nsis"],
+"windows": {
+  "webviewInstallMode": {
+    "type": "embedBootstrapper"
+  }
+}
+```
+
+This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image.
+
+## Windows Release Checklist
+
+Before sending a Windows build externally:
+
+1. Build MSI and NSIS on Windows 10/11.
+2. Install MSI on a clean machine.
+3. Launch app without Node, Rust, Python, or npm installed.
+4. Verify first-run offline behavior: UI opens; API-dependent actions fail clearly.
+5. Verify live NASA POWER fetch.
+6. Verify save/preview/delete/export.
+7. Verify API Slots use Windows Credential Manager.
+8. Verify local PV estimate.
+9. Verify PVWatts with a real `nlr_pvwatts_key`.
+10. Verify EUMDAC sidecar search/download with real EUMETSAT credentials.
+11. Uninstall MSI and confirm app files are removed.
+12. Repeat install/uninstall for NSIS.
+13. Authenticode sign MSI/NSIS and verify:
+
+```powershell
+Get-AuthenticodeSignature .\path\to\installer.exe
+Get-AuthenticodeSignature .\path\to\installer.msi
+```
+
+Current Windows status remains: configured, not verified.
+
+## EUMDAC Sidecar Packaging
+
+The app currently detects sidecars named:
+
+```text
+eumdac
+eumdac.exe
+eumdac-cli
+eumdac-cli.exe
+```
+
+next to the packaged executable.
+
+For production:
+
+1. Choose the exact EUMDAC release and source.
+2. Record version, checksum, source URL, and license.
+3. Place platform binaries under `src-tauri/binaries/`.
+4. Add the sidecar to `src-tauri/tauri.conf.json > bundle.externalBin`.
+5. Sign/notarize the sidecar with the app.
+6. Validate auth flow with real `eumetsat_consumer_key` and `eumetsat_consumer_secret`.
+7. Validate these CLI shapes against the bundled EUMDAC version:
+
+```text
+eumdac search -c <collection> -s <start> -e <end> --bbox <v1> <v2> <v3> <v4> --limit <n>
+eumdac download -c <collection> -p <product> -o <output_dir>
+```
+
+Important: the app currently checks that both EUMETSAT keychain slots exist, but the final sidecar credential handoff must be confirmed for the exact EUMDAC binary used. If EUMDAC expects its own credential store or environment variables, wire that explicitly and keep secrets out of logs.
+
+## Artifact Handoff
+
+The review ZIP should include:
+
+```text
+README.md
+docs/
+scripts/
+src/
+src-tauri/
+crates/
+Cargo.toml
+Cargo.lock
+package.json
+package-lock.json
+tsconfig*.json
+vite.config.ts
+index.html
+rust-toolchain.toml
+.node-version
+artifacts/macos/Satellite Data Toolkit_2.1.0_aarch64.dmg
+artifacts/macos/SHA256SUMS.txt
+artifacts/visual/
+```
+
+It should exclude:
+
+```text
+node_modules/
+target/
+dist/
+.playwright-cli/
+*.zip from older handoffs
+local screenshots
+```

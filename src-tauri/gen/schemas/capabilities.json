@@ -1,0 +1,1 @@
+{"main-window":{"identifier":"main-window","description":"Permissions for the primary Satellite Data Toolkit window.","local":true,"windows":["main"],"permissions":["core:default"]}}

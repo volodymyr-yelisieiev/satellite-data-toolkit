@@ -1,0 +1,11 @@
+[package]
+name = "satellite-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+satellite-core = { path = "../satellite-core" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

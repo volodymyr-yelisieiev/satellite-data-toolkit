@@ -1,0 +1,24 @@
+# Dependencies
+/node_modules/
+
+# Build outputs and caches
+/dist/
+/target/
+/src-tauri/target/
+/.playwright-cli/
+/output/
+/artifacts/
+*.tsbuildinfo
+
+# Local handoff/release artifacts
+*.zip
+*.dmg
+*.msi
+*.AppImage
+*.deb
+*.rpm
+20*.jpg
+
+# OS/editor/runtime noise
+.DS_Store
+*.log

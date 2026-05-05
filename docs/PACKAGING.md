@@ -70,7 +70,7 @@ Expected outputs:
 
 ```text
 target/release/bundle/macos/Satellite Data Toolkit.app
-target/release/bundle/dmg/Satellite Data Toolkit_2.1.0_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
 The script:
@@ -101,8 +101,8 @@ For a public DMG:
 codesign --verify --deep --strict --verbose=2 "Satellite Data Toolkit.app"
 spctl --assess --type execute --verbose=4 "Satellite Data Toolkit.app"
 xcrun stapler validate "Satellite Data Toolkit.app"
-hdiutil verify "Satellite Data Toolkit_2.1.0_aarch64.dmg"
-spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.0_aarch64.dmg"
+hdiutil verify "Satellite Data Toolkit_2.1.1_aarch64.dmg"
+spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg"
 ```
 
 8. Test first launch from a clean user profile with no internet.
@@ -220,7 +220,7 @@ vite.config.ts
 index.html
 rust-toolchain.toml
 .node-version
-artifacts/macos/Satellite Data Toolkit_2.1.0_aarch64.dmg
+artifacts/macos/Satellite Data Toolkit_2.1.1_aarch64.dmg
 artifacts/macos/SHA256SUMS.txt
 artifacts/visual/
 ```

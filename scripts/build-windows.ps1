@@ -10,6 +10,31 @@ Require-Command node
 Require-Command npm
 Require-Command cargo
 
+function Assert-WindowsGuiSubsystem($Path) {
+  if (-not (Test-Path $Path)) {
+    throw "Windows executable was not produced: $Path"
+  }
+
+  $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $Path))
+  $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+  $optionalHeaderOffset = $peOffset + 24
+  $magic = [BitConverter]::ToUInt16($bytes, $optionalHeaderOffset)
+  if ($magic -eq 0x10b) {
+    $subsystemOffset = $optionalHeaderOffset + 68
+  } elseif ($magic -eq 0x20b) {
+    $subsystemOffset = $optionalHeaderOffset + 88
+  } else {
+    throw "Unknown PE optional header magic 0x$($magic.ToString('x')) in $Path"
+  }
+
+  $subsystem = [BitConverter]::ToUInt16($bytes, $subsystemOffset)
+  if ($subsystem -ne 2) {
+    throw "Expected Windows GUI subsystem (2), got $subsystem for $Path"
+  }
+
+  Write-Host "Windows subsystem: GUI (2)"
+}
+
 node --version
 npm --version
 cargo --version
@@ -17,6 +42,7 @@ cargo --version
 npm ci
 npm run build
 npm run tauri:build -- --bundles msi,nsis
+Assert-WindowsGuiSubsystem "target\release\satellite-data-toolkit.exe"
 
 $msi = Get-ChildItem -Path "target\release\bundle\msi" -Filter "*.msi" -ErrorAction SilentlyContinue
 $nsis = Get-ChildItem -Path "target\release\bundle\nsis" -Filter "*.exe" -ErrorAction SilentlyContinue

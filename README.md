@@ -187,7 +187,7 @@ Expected outputs:
 
 ```text
 target/release/bundle/macos/Satellite Data Toolkit.app
-target/release/bundle/dmg/Satellite Data Toolkit_2.1.0_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
 The script performs a local ad-hoc signature and verifies the `.app` with `codesign --verify --deep --strict`. It also rebuilds the DMG with an `/Applications` symlink and verifies the DMG with `hdiutil verify`.

@@ -13,7 +13,7 @@ npm run build
 npm run tauri:build -- --bundles app,dmg
 
 APP_PATH="target/release/bundle/macos/Satellite Data Toolkit.app"
-DMG_PATH="target/release/bundle/dmg/Satellite Data Toolkit_2.1.0_aarch64.dmg"
+DMG_PATH="target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg"
 STAGING_DIR="$(mktemp -d)"
 
 codesign --force --deep --sign - "$APP_PATH"

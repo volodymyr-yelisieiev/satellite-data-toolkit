@@ -19,14 +19,11 @@ function Assert-WindowsGuiSubsystem($Path) {
   $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
   $optionalHeaderOffset = $peOffset + 24
   $magic = [BitConverter]::ToUInt16($bytes, $optionalHeaderOffset)
-  if ($magic -eq 0x10b) {
-    $subsystemOffset = $optionalHeaderOffset + 68
-  } elseif ($magic -eq 0x20b) {
-    $subsystemOffset = $optionalHeaderOffset + 88
-  } else {
+  if (($magic -ne 0x10b) -and ($magic -ne 0x20b)) {
     throw "Unknown PE optional header magic 0x$($magic.ToString('x')) in $Path"
   }
 
+  $subsystemOffset = $optionalHeaderOffset + 68
   $subsystem = [BitConverter]::ToUInt16($bytes, $subsystemOffset)
   if ($subsystem -ne 2) {
     throw "Expected Windows GUI subsystem (2), got $subsystem for $Path"

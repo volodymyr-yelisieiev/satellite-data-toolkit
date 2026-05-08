@@ -174,6 +174,7 @@ Run all local checks:
 
 This currently runs:
 
+- `npm run version:check`
 - `npm run typecheck`
 - `npm run test`
 - `npm run build`

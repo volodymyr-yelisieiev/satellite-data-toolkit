@@ -12,7 +12,7 @@ Scope: repository hardening pass for the Tauri desktop app on branch `codex/prod
 Additional changes validated locally:
 
 - Frontend unit tests added with Vitest for shared UI/domain helpers.
-- `./scripts/verify.sh` now runs TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
+- `./scripts/verify.sh` now runs version consistency checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
 - CI now verifies Ubuntu, macOS, and Windows runners.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
@@ -23,6 +23,7 @@ Local commands run successfully on May 8, 2026:
 
 ```bash
 npm run test
+npm run version:check
 npm run typecheck
 npm run build
 cargo fmt --all -- --check

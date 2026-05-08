@@ -8,6 +8,7 @@ if (!isWindows) {
 }
 
 const commands = [
+  ["npm", ["run", "version:check"]],
   ["npm", ["run", "typecheck"]],
   ["npm", ["run", "test"]],
   ["npm", ["run", "build"]],

@@ -43,6 +43,7 @@ npm run visual:smoke
 This fails fast if Node, npm, or Cargo is unavailable, then runs:
 
 ```text
+npm run version:check
 npm run typecheck
 npm run test
 npm run build

@@ -36,6 +36,7 @@ Run:
 
 ```bash
 ./scripts/verify.sh
+./scripts/audit-rust.sh
 ```
 
 This fails fast if Node, npm, or Cargo is unavailable, then runs:
@@ -51,15 +52,13 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 npm audit --omit=dev
 ```
 
-Recommended additions before public release:
+`./scripts/audit-rust.sh` requires `cargo-audit`:
 
 ```bash
-cargo audit
-cargo deny check
-npm audit
+cargo install cargo-audit --locked --version 0.22.1
 ```
 
-The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
+The GitHub RustSec audit workflow and release workflow gate run the same advisory class through `rustsec/audit-check@v2.0.0`. The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
 
 ## macOS Local Review Build
 
@@ -110,7 +109,7 @@ spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
 8. Test first launch from a clean user profile with no internet.
-9. Test NASA fetch, save, export, API slots, PV local estimate, and NDVI sample.
+9. Test NASA fetch, save, export, API slots, PV local estimate, and an NDVI GeoTIFF sample with CRS/geotransform tags plus `GDAL_NODATA`.
 10. Test app data removal and uninstall behavior.
 
 Known current macOS public-release gaps:

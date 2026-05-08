@@ -53,7 +53,7 @@ Observed DMG SHA256:
 
 Browser visual smoke screenshots were captured for `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows.
 
-Remaining external blockers are unchanged: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and production GeoTIFF metadata preservation for NDVI.
+Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 
 ## Executive Status
 
@@ -67,7 +67,7 @@ Remaining external blockers are unchanged: Windows install/uninstall QA, public 
 | UI visual smoke | Pass with caveat | Key screens rendered at target widths with no persistent clipped text/controls detected. |
 | EUMETSAT | Partial | Sidecar command wiring exists, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
-| NDVI | Partial production | Math/tests exist; production GeoTIFF CRS/tag preservation remains missing. |
+| NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags and `GDAL_NODATA` metadata are preserved in the pure-Rust path. |
 
 ## Subagent Audit Summary
 
@@ -75,8 +75,8 @@ Five validation passes were run in parallel before final fixes:
 
 - macOS packaging: verified local `.app`/DMG path, ad-hoc signature, DMG structure, and public-release signing gaps.
 - Windows packaging: confirmed MSI/NSIS config and listed required Windows 10/11 verification steps.
-- Security/reproducibility: confirmed CSP/env/keychain baseline and flagged missing cargo advisory policy plus sidecar trust hardening.
-- Product/API: confirmed NASA/local PV/saved-data/API-slot base and flagged EUMDAC CLI shape, PVWatts validation, NDVI GeoTIFF gaps.
+- Security/reproducibility: confirmed CSP/env/keychain baseline, added RustSec audit gates, and flagged remaining sidecar trust hardening.
+- Product/API: confirmed NASA/local PV/saved-data/API-slot base and flagged EUMDAC CLI shape, PVWatts validation, and NDVI real-world fixture QA gaps.
 - Docs/handoff: flagged README/PACKAGING as too thin and required explicit credentials, storage, release gaps, and ZIP contents.
 
 Fixes applied after those audits:
@@ -251,7 +251,7 @@ Viewport checks:
 - Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance.
 - EUMETSAT live product search/download because no bundled sidecar and test credentials were available.
 - PVWatts/NLR live API result because no API key was available.
-- Production NDVI georeferencing preservation because current implementation uses pure TIFF output rather than GDAL-backed GeoTIFF metadata preservation.
+- Broader NDVI fixture coverage for tiled/compressed/multi-provider GeoTIFFs beyond the local metadata-preservation test.
 
 ## Release Recommendation
 
@@ -263,4 +263,4 @@ Do not present it as a public cross-platform release until:
 - macOS signing/notarization is configured;
 - EUMDAC sidecars are bundled and signed;
 - EUMETSAT/PVWatts live credentials are tested;
-- NDVI GeoTIFF metadata preservation is implemented if production geospatial output is required.
+- Broader NDVI GeoTIFF fixture QA is completed for the target satellite providers.

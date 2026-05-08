@@ -13,14 +13,33 @@ on:
 
 permissions:
   contents: write
+  checks: write
+  issues: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  rust-audit:
+    name: RustSec audit
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: RustSec cargo audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   windows:
     name: Build Windows installers
     runs-on: windows-latest
+    needs:
+      - rust-audit
 
     steps:
       - name: Checkout
@@ -60,6 +79,8 @@ jobs:
   macos:
     name: Build macOS DMG
     runs-on: macos-latest
+    needs:
+      - rust-audit
 
     steps:
       - name: Checkout

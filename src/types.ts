@@ -11,6 +11,11 @@ export type Screen =
 
 export type Temporal = "daily" | "hourly";
 
+export interface AppSettings {
+  startupScreen: Screen;
+  previewRows: number;
+}
+
 export interface PowerRequest {
   latitude: number;
   longitude: number;

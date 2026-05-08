@@ -30,14 +30,18 @@ import {
   apiSlots,
   availableParams,
   compactUnit,
+  defaultAppSettings,
   errorMessage,
   formatNumber,
   initialRequest,
+  normalizeAppSettings,
+  previewRowOptions,
   quickExamples,
   timestamp,
   toFiniteNumber,
 } from "./domain";
 import type {
+  AppSettings,
   ActivityLogEntry,
   CredentialTestResult,
   EumetsatProduct,
@@ -84,14 +88,34 @@ const powerTabs = [
   { id: "pv" as Screen, title: "PV ESTIMATE", icon: BarChart3 },
 ];
 
-function screenFromHash(): Screen {
-  if (typeof window === "undefined") return "power";
+const settingsStorageKey = "satellite-data-toolkit:settings:v1";
+
+function loadStoredSettings(): AppSettings {
+  if (typeof window === "undefined") return defaultAppSettings;
+  try {
+    return normalizeAppSettings(JSON.parse(window.localStorage.getItem(settingsStorageKey) ?? "null"));
+  } catch {
+    return defaultAppSettings;
+  }
+}
+
+function saveStoredSettings(settings: AppSettings) {
+  try {
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+  } catch {
+    // Browser privacy modes can deny localStorage; keep the in-memory settings.
+  }
+}
+
+function screenFromHash(fallback: Screen = "power"): Screen {
+  if (typeof window === "undefined") return fallback;
   const candidate = window.location.hash.replace(/^#/, "");
-  return navItems.some((item) => item.id === candidate) ? (candidate as Screen) : "power";
+  return navItems.some((item) => item.id === candidate) ? (candidate as Screen) : fallback;
 }
 
 function App() {
-  const [active, setActive] = useState<Screen>(screenFromHash);
+  const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [active, setActive] = useState<Screen>(() => screenFromHash(settings.startupScreen));
   const navListRef = useRef<HTMLElement | null>(null);
   const [request, setRequest] = useState<PowerRequest>(initialRequest);
   const [dataset, setDataset] = useState<PowerDataset | null>(null);
@@ -102,7 +126,7 @@ function App() {
     { time: timestamp(), message: "Application ready" },
     { time: timestamp(), message: "NASA POWER defaults loaded" },
   ]);
-  const [previewLimit, setPreviewLimit] = useState(12);
+  const [previewLimit, setPreviewLimit] = useState(settings.previewRows);
   const [lastExportPath, setLastExportPath] = useState("");
   const [pvCapacity, setPvCapacity] = useState(100);
   const [pvLosses, setPvLosses] = useState(14);
@@ -123,11 +147,11 @@ function App() {
 
   useEffect(() => {
     function handleHashChange() {
-      setActive(screenFromHash());
+      setActive(screenFromHash(settings.startupScreen));
     }
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
+  }, [settings.startupScreen]);
 
   useEffect(() => {
     if (window.location.hash !== `#${active}`) {
@@ -140,6 +164,23 @@ function App() {
 
   function addLog(message: string) {
     setLogs((current) => [...current.slice(-80), { time: timestamp(), message }]);
+  }
+
+  function updateSettings(partial: Partial<AppSettings>) {
+    const next = normalizeAppSettings({ ...settings, ...partial });
+    setSettings(next);
+    saveStoredSettings(next);
+    if (next.previewRows !== settings.previewRows) {
+      setPreviewLimit(next.previewRows);
+    }
+    addLog("Application settings saved");
+  }
+
+  function resetSettings() {
+    setSettings(defaultAppSettings);
+    saveStoredSettings(defaultAppSettings);
+    setPreviewLimit(defaultAppSettings.previewRows);
+    addLog("Application settings reset");
   }
 
   async function refreshSavedCount() {
@@ -173,7 +214,7 @@ function App() {
     setLoading(true);
     setStatus("idle");
     setError("");
-    setPreviewLimit(12);
+    setPreviewLimit(settings.previewRows);
     addLog("Sending request to NASA POWER API...");
     try {
       const response = await fetchPowerDataset(request);
@@ -357,7 +398,7 @@ function App() {
               }}
               onExport={handleExport}
               onSave={handleSave}
-              onPreviewMore={() => setPreviewLimit((current) => current + 24)}
+              onPreviewMore={() => setPreviewLimit((current) => current + settings.previewRows)}
               onClearLogs={() => setLogs([{ time: timestamp(), message: "Activity log cleared" }])}
             />
           )}
@@ -395,7 +436,13 @@ function App() {
             />
           )}
           {active === "api" && <ApiScreen apiStatus={apiStatus} refreshApiStatus={refreshApiStatus} addLog={addLog} />}
-          {active === "settings" && <SettingsScreen />}
+          {active === "settings" && (
+            <SettingsScreen
+              settings={settings}
+              onChange={updateSettings}
+              onReset={resetSettings}
+            />
+          )}
           {active === "about" && <AboutScreen />}
         </div>
 
@@ -1235,7 +1282,15 @@ function ApiScreen({
   );
 }
 
-function SettingsScreen() {
+function SettingsScreen({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (partial: Partial<AppSettings>) => void;
+  onReset: () => void;
+}) {
   return (
     <section className="stack-screen">
       <section className="screen-heading">
@@ -1244,22 +1299,45 @@ function SettingsScreen() {
         </div>
         <div>
           <h1>Settings</h1>
-          <p>Defaults for units, theme, storage, and request handling</p>
+          <p>Defaults for startup, previews, storage, and request handling</p>
         </div>
       </section>
       <div className="card form-card">
         <div className="field-grid two">
           <label>
-            Theme
-            <select defaultValue="dark">
-              <option value="dark">Dark</option>
-              <option value="system">System</option>
+            Startup Screen
+            <select value={settings.startupScreen} onChange={(event) => onChange({ startupScreen: event.target.value as Screen })}>
+              {navItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Initial Preview Rows
+            <select value={settings.previewRows} onChange={(event) => onChange({ previewRows: toFiniteNumber(event.target.value, settings.previewRows) })}>
+              {previewRowOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value} rows
+                </option>
+              ))}
             </select>
           </label>
           <label>
             Request Timeout
-            <input defaultValue="60 seconds" readOnly />
+            <input value="60 seconds" readOnly />
           </label>
+          <label>
+            Credential Storage
+            <input value="OS keychain" readOnly />
+          </label>
+        </div>
+        <div className="action-row left wrap">
+          <button type="button" className="secondary-action" onClick={onReset}>
+            <RotateCcw size={18} />
+            Reset Settings
+          </button>
         </div>
       </div>
     </section>

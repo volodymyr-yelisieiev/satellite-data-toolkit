@@ -18,6 +18,7 @@ Additional changes validated locally:
 - Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
 - Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, weekly Dependabot update configuration for npm, Cargo, and GitHub Actions, enabled GitHub Dependabot vulnerability alerts/automated security fixes, and `main` branch protection with required CI checks.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
+- Windows package and release workflows now run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - EUMETSAT credential testing now requires both keychain slots plus a ready sidecar status instead of marking a single stored slot as ready.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
@@ -68,7 +69,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | --- | --- | --- |
 | macOS local app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies and mounts. |
 | macOS public release | Not ready | Gatekeeper rejects ad-hoc app/DMG because Developer ID signing and notarization are not configured. |
-| Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; real install/uninstall QA is still required. |
+| Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; MSI quiet install/uninstall smoke is wired into Windows workflows. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |

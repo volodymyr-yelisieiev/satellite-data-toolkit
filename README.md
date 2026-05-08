@@ -220,7 +220,7 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The manual Windows package workflow and release workflow run a CI-level MSI silent install/uninstall smoke on the Windows runner. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## GitHub CI/CD
 

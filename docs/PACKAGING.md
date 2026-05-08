@@ -153,6 +153,8 @@ The Tauri config currently enables:
 
 This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image. Windows signing is skipped unless `WINDOWS_SIGN_COMMAND` is set. When it is set, `scripts/build-windows.ps1` injects a temporary Tauri `signCommand` config that calls `scripts/sign-windows.ps1`. The wrapper sets `WINDOWS_SIGN_FILE` to the file Tauri asked to sign, and also supports `{file}` or `%1` placeholders for signing providers that require positional substitution.
 
+The manual Windows package workflow and release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
+
 ## Windows Release Checklist
 
 Before sending a Windows build externally:
@@ -176,7 +178,7 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts and has signing-command plumbing; native install/uninstall, Authenticode certificate configuration, and SmartScreen QA are still required on Windows 10/11.
+Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has signing-command plumbing, and includes MSI quiet install/uninstall smoke on the Windows runner. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, and SmartScreen QA are still required before public distribution.
 
 ## GitHub Release Workflow
 

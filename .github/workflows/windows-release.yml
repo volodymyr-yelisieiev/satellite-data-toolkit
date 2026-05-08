@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -245,6 +245,8 @@ jobs:
     needs:
       - windows
       - macos
+    permissions:
+      contents: write
 
     steps:
       - name: Download release artifacts

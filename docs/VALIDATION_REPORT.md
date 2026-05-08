@@ -53,7 +53,7 @@ Observed DMG SHA256:
 
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
 
-Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25562003258` passed in 4m45s and uploaded `windows-msi`, `windows-nsis`, and `windows-sha256sums` artifacts.
+Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25562971902` passed and uploaded `windows-msi`, `windows-nsis`, and `windows-sha256sums` artifacts.
 
 Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 

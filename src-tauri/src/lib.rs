@@ -14,6 +14,7 @@ use satellite_core::{
     PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest, PvWattsResult,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -21,6 +22,8 @@ const KEYCHAIN_SERVICE: &str = "Satellite Data Toolkit";
 const MAX_DATASET_RECORDS: usize = 120_000;
 const MAX_DATASET_JSON_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SAVED_NAME_LEN: usize = 160;
+const EUMDAC_SIDECAR_NAMES: &[&str] = &["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"];
+const EUMDAC_MANIFEST_NAMES: &[&str] = &["eumdac-sidecar-manifest.json", "eumdac-sidecars.json"];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +49,11 @@ struct CredentialTestResult {
     slot: String,
     ok: bool,
     message: String,
+}
+
+struct EumetsatCredentials {
+    consumer_key: String,
+    consumer_secret: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +90,42 @@ struct DownloadResult {
     output_dir: String,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarStatus {
+    found: bool,
+    trusted: bool,
+    path: Option<String>,
+    file_name: Option<String>,
+    sha256: Option<String>,
+    manifest_path: Option<String>,
+    version: Option<String>,
+    source: Option<String>,
+    license: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarManifest {
+    #[serde(default)]
+    binaries: Vec<EumdacSidecarManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarManifestEntry {
+    #[serde(alias = "fileName")]
+    name: String,
+    sha256: String,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    license: Option<String>,
 }
 
 #[tauri::command]
@@ -251,16 +295,16 @@ fn delete_api_key(name: String) -> Result<(), String> {
 #[tauri::command]
 async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
     validate_secret_name(&name)?;
-    let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
-    if !present {
-        return Ok(CredentialTestResult {
-            slot: name,
-            ok: false,
-            message: "No credential stored for this slot".to_string(),
-        });
-    }
 
     if name == "nlr_pvwatts_key" {
+        let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
+        if !present {
+            return Ok(CredentialTestResult {
+                slot: name,
+                ok: false,
+                message: "No credential stored for this slot".to_string(),
+            });
+        }
         let request = PvWattsRequest {
             latitude: 40.7128,
             longitude: -74.006,
@@ -290,27 +334,39 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
         }
     }
 
-    Ok(CredentialTestResult {
-        slot: name,
-        ok: true,
-        message: "Credential is stored. EUMETSAT live validation requires bundled EUMDAC and both key/secret slots.".to_string(),
-    })
+    let key_present = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
+    let secret_present =
+        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
+    let sidecar_status = eumdac_sidecar_status()?;
+    Ok(evaluate_eumetsat_credential_status(
+        name,
+        key_present,
+        secret_present,
+        &sidecar_status,
+        allow_unverified_eumdac_sidecar(),
+    ))
 }
 
 #[tauri::command]
 fn check_eumdac_sidecar() -> Result<bool, String> {
-    Ok(find_eumdac_sidecar()?.is_some())
+    let status = eumdac_sidecar_status()?;
+    Ok(status.trusted || (status.found && allow_unverified_eumdac_sidecar()))
 }
 
 #[tauri::command]
-fn fetch_eumetsat_products(query: EumetsatQuery) -> Result<ProductList, String> {
-    ensure_eumetsat_credentials()?;
-    let sidecar =
-        find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
+fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status()
+}
+
+#[tauri::command]
+fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
+    let sidecar = trusted_eumdac_sidecar()?;
     validate_eumetsat_query(&query)?;
+    sync_eumdac_credentials(&app, &sidecar)?;
     let limit = query.limit.clamp(1, 100).to_string();
     let bbox = parse_eumdac_bbox(&query.bbox)?;
     let mut command = Command::new(sidecar);
+    configure_eumdac_command(&app, &mut command)?;
     command.args([
         "search",
         "-c",
@@ -340,13 +396,13 @@ fn fetch_eumetsat_products(query: EumetsatQuery) -> Result<ProductList, String> 
 
 #[tauri::command]
 fn download_eumetsat_product(
+    app: AppHandle,
     collection_id: String,
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
-    ensure_eumetsat_credentials()?;
-    let sidecar =
-        find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
+    let sidecar = trusted_eumdac_sidecar()?;
+    sync_eumdac_credentials(&app, &sidecar)?;
     let clean_collection_id = collection_id.trim().to_string();
     let clean_product_id = product_id.trim().to_string();
     if clean_collection_id.is_empty() {
@@ -359,7 +415,9 @@ fn download_eumetsat_product(
     if !output_path.exists() || !output_path.is_dir() {
         return Err("output directory must exist".to_string());
     }
-    let output = Command::new(sidecar)
+    let mut command = Command::new(sidecar);
+    configure_eumdac_command(&app, &mut command)?;
+    let output = command
         .args([
             "download",
             "-c",
@@ -569,6 +627,36 @@ fn validate_secret_name(name: &str) -> Result<(), String> {
     }
 }
 
+fn evaluate_eumetsat_credential_status(
+    slot: String,
+    key_present: bool,
+    secret_present: bool,
+    sidecar_status: &EumdacSidecarStatus,
+    allow_unverified_sidecar: bool,
+) -> CredentialTestResult {
+    if !key_present || !secret_present {
+        return CredentialTestResult {
+            slot,
+            ok: false,
+            message: "Both EUMETSAT consumer key and consumer secret must be stored".to_string(),
+        };
+    }
+
+    if sidecar_status.trusted || (sidecar_status.found && allow_unverified_sidecar) {
+        CredentialTestResult {
+            slot,
+            ok: true,
+            message: "EUMETSAT credentials are stored and the EUMDAC sidecar is ready".to_string(),
+        }
+    } else {
+        CredentialTestResult {
+            slot,
+            ok: false,
+            message: sidecar_status.message.clone(),
+        }
+    }
+}
+
 fn get_api_key(name: &str) -> Result<Option<String>, String> {
     validate_secret_name(name)?;
     let entry = Entry::new(KEYCHAIN_SERVICE, name).map_err(|error| error.to_string())?;
@@ -579,15 +667,66 @@ fn get_api_key(name: &str) -> Result<Option<String>, String> {
     }
 }
 
-fn ensure_eumetsat_credentials() -> Result<(), String> {
-    let has_key = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
-    let has_secret =
-        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
-    if has_key && has_secret {
+fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
+    let consumer_key = get_api_key("eumetsat_consumer_key")?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
+    let consumer_secret = get_api_key("eumetsat_consumer_secret")?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
+    Ok(EumetsatCredentials {
+        consumer_key,
+        consumer_secret,
+    })
+}
+
+fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String> {
+    let credentials = get_eumetsat_credentials()?;
+    let mut command = Command::new(sidecar);
+    configure_eumdac_command(app, &mut command)?;
+    let output = command
+        .args([
+            "set-credentials",
+            credentials.consumer_key.as_str(),
+            credentials.consumer_secret.as_str(),
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let mut fallback = Command::new(sidecar);
+    configure_eumdac_command(app, &mut fallback)?;
+    let fallback_output = fallback
+        .args([
+            "--set-credentials",
+            credentials.consumer_key.as_str(),
+            credentials.consumer_secret.as_str(),
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if fallback_output.status.success() {
         Ok(())
     } else {
-        Err("EUMETSAT consumer key and secret must both be stored".to_string())
+        Err(redacted_process_error_with_secrets(
+            &fallback_output.stderr,
+            &[
+                credentials.consumer_key.as_str(),
+                credentials.consumer_secret.as_str(),
+            ],
+        ))
     }
+}
+
+fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<(), String> {
+    let config_dir = app_data_dir(app)?.join("eumdac");
+    fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
+    command
+        .env("EUMDAC_CONFIG_DIR", &config_dir)
+        .env("XDG_CONFIG_HOME", &config_dir)
+        .env("APPDATA", &config_dir);
+    Ok(())
 }
 
 fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
@@ -595,7 +734,7 @@ fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
     let Some(dir) = exe.parent() else {
         return Ok(None);
     };
-    Ok(["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"]
+    Ok(EUMDAC_SIDECAR_NAMES
         .iter()
         .map(|name| dir.join(name))
         .find(|path| is_executable_candidate(path)))
@@ -603,6 +742,143 @@ fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
 
 fn is_executable_candidate(path: &Path) -> bool {
     path.exists() && path.is_file()
+}
+
+fn trusted_eumdac_sidecar() -> Result<PathBuf, String> {
+    let status = eumdac_sidecar_status()?;
+    let Some(path) = status.path.as_deref().map(PathBuf::from) else {
+        return Err(status.message);
+    };
+    if status.trusted || allow_unverified_eumdac_sidecar() {
+        Ok(path)
+    } else {
+        Err(status.message)
+    }
+}
+
+fn allow_unverified_eumdac_sidecar() -> bool {
+    std::env::var("SATELLITE_ALLOW_UNVERIFIED_EUMDAC")
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
+    match find_eumdac_sidecar()? {
+        Some(path) => eumdac_sidecar_status_for_path(path),
+        None => Ok(EumdacSidecarStatus {
+            found: false,
+            trusted: false,
+            path: None,
+            file_name: None,
+            sha256: None,
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is not bundled".to_string(),
+        }),
+    }
+}
+
+fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, String> {
+    let sha256 = sha256_file(&path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("eumdac")
+        .to_string();
+    let manifest_path = path.parent().and_then(|dir| {
+        EUMDAC_MANIFEST_NAMES
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.exists() && candidate.is_file())
+    });
+    let Some(manifest_path) = manifest_path else {
+        return Ok(EumdacSidecarStatus {
+            found: true,
+            trusted: false,
+            path: Some(path.to_string_lossy().to_string()),
+            file_name: Some(file_name),
+            sha256: Some(sha256),
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is present but checksum manifest is missing".to_string(),
+        });
+    };
+    let manifest_path_string = manifest_path.to_string_lossy().to_string();
+    let manifest = match read_eumdac_sidecar_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return Ok(EumdacSidecarStatus {
+                found: true,
+                trusted: false,
+                path: Some(path.to_string_lossy().to_string()),
+                file_name: Some(file_name),
+                sha256: Some(sha256),
+                manifest_path: Some(manifest_path_string),
+                version: None,
+                source: None,
+                license: None,
+                message: error,
+            })
+        }
+    };
+    let Some(entry) = manifest
+        .binaries
+        .iter()
+        .find(|entry| entry.name == file_name)
+    else {
+        return Ok(EumdacSidecarStatus {
+            found: true,
+            trusted: false,
+            path: Some(path.to_string_lossy().to_string()),
+            file_name: Some(file_name.clone()),
+            sha256: Some(sha256),
+            manifest_path: Some(manifest_path_string),
+            version: None,
+            source: None,
+            license: None,
+            message: format!("EUMDAC sidecar manifest has no entry for {file_name}"),
+        });
+    };
+    let expected_sha256 = normalized_sha256(&entry.sha256);
+    let trusted = expected_sha256 == sha256;
+    Ok(EumdacSidecarStatus {
+        found: true,
+        trusted,
+        path: Some(path.to_string_lossy().to_string()),
+        file_name: Some(file_name),
+        sha256: Some(sha256),
+        manifest_path: Some(manifest_path_string),
+        version: entry.version.clone(),
+        source: entry.source.clone(),
+        license: entry.license.clone(),
+        message: if trusted {
+            "EUMDAC sidecar checksum matches manifest".to_string()
+        } else {
+            "EUMDAC sidecar checksum does not match manifest".to_string()
+        },
+    })
+}
+
+fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, String> {
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&content).map_err(|error| format!("invalid EUMDAC manifest: {error}"))
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn normalized_sha256(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
@@ -692,13 +968,25 @@ fn json_products(value: serde_json::Value) -> Vec<EumetsatProduct> {
 }
 
 fn redacted_process_error(stderr: &[u8]) -> String {
+    redacted_process_error_with_secrets(stderr, &[])
+}
+
+fn redacted_process_error_with_secrets(stderr: &[u8], secrets: &[&str]) -> String {
     let message = String::from_utf8_lossy(stderr);
     if message.trim().is_empty() {
         "EUMDAC command failed".to_string()
     } else {
-        message
+        let mut redacted = message
             .replace("consumer_secret", "consumer_secret[redacted]")
-            .replace("consumer_key", "consumer_key[redacted]")
+            .replace("consumer_key", "consumer_key[redacted]");
+        for secret in secrets
+            .iter()
+            .map(|secret| secret.trim())
+            .filter(|secret| !secret.is_empty())
+        {
+            redacted = redacted.replace(secret, "[redacted]");
+        }
+        redacted
     }
 }
 
@@ -725,6 +1013,7 @@ pub fn run() {
             delete_api_key,
             test_api_key,
             check_eumdac_sidecar,
+            get_eumdac_sidecar_status,
             fetch_eumetsat_products,
             download_eumetsat_product
         ])
@@ -792,5 +1081,157 @@ mod tests {
         assert_eq!(products.len(), 2);
         assert_eq!(products[0].id, "PRODUCT_A");
         assert_eq!(products[1].title, "PRODUCT_B");
+    }
+
+    #[test]
+    fn redacts_eumdac_secret_values_from_process_errors() {
+        let message = redacted_process_error_with_secrets(
+            b"consumer_key abc123 failed with consumer_secret def456",
+            &["abc123", "def456"],
+        );
+        assert!(!message.contains("abc123"));
+        assert!(!message.contains("def456"));
+        assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn eumetsat_credential_test_requires_both_slots() {
+        let status = ready_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_key".to_string(),
+            true,
+            false,
+            &status,
+            false,
+        );
+
+        assert!(!result.ok);
+        assert!(result.message.contains("Both EUMETSAT"));
+    }
+
+    #[test]
+    fn eumetsat_credential_test_requires_ready_sidecar() {
+        let status = missing_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_secret".to_string(),
+            true,
+            true,
+            &status,
+            false,
+        );
+
+        assert!(!result.ok);
+        assert_eq!(result.message, "EUMDAC sidecar is not bundled");
+    }
+
+    #[test]
+    fn eumetsat_credential_test_passes_with_credentials_and_sidecar() {
+        let status = ready_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_secret".to_string(),
+            true,
+            true,
+            &status,
+            false,
+        );
+
+        assert!(result.ok);
+        assert!(result.message.contains("sidecar is ready"));
+    }
+
+    fn ready_eumdac_status() -> EumdacSidecarStatus {
+        EumdacSidecarStatus {
+            found: true,
+            trusted: true,
+            path: Some("/tmp/eumdac".to_string()),
+            file_name: Some("eumdac".to_string()),
+            sha256: Some("abc".to_string()),
+            manifest_path: Some("/tmp/eumdac-sidecar-manifest.json".to_string()),
+            version: Some("3.0.0".to_string()),
+            source: None,
+            license: None,
+            message: "ready".to_string(),
+        }
+    }
+
+    fn missing_eumdac_status() -> EumdacSidecarStatus {
+        EumdacSidecarStatus {
+            found: false,
+            trusted: false,
+            path: None,
+            file_name: None,
+            sha256: None,
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is not bundled".to_string(),
+        }
+    }
+
+    #[test]
+    fn trusts_eumdac_sidecar_when_manifest_checksum_matches() {
+        let dir = temp_dir_path("trusted_eumdac");
+        fs::create_dir_all(&dir).unwrap();
+        let sidecar = dir.join("eumdac");
+        fs::write(&sidecar, b"fake eumdac binary").unwrap();
+        let sha256 = sha256_file(&sidecar).unwrap();
+        fs::write(
+            dir.join("eumdac-sidecar-manifest.json"),
+            format!(
+                r#"{{
+                  "binaries": [{{
+                    "name": "eumdac",
+                    "sha256": "{sha256}",
+                    "version": "3.0.0",
+                    "source": "https://example.invalid/eumdac",
+                    "license": "Apache-2.0"
+                  }}]
+                }}"#
+            ),
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path(sidecar).unwrap();
+        assert!(status.found);
+        assert!(status.trusted);
+        assert_eq!(status.version.as_deref(), Some("3.0.0"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_eumdac_sidecar_when_manifest_checksum_mismatches() {
+        let dir = temp_dir_path("untrusted_eumdac");
+        fs::create_dir_all(&dir).unwrap();
+        let sidecar = dir.join("eumdac");
+        fs::write(&sidecar, b"fake eumdac binary").unwrap();
+        fs::write(
+            dir.join("eumdac-sidecar-manifest.json"),
+            r#"{"binaries":[{"name":"eumdac","sha256":"0000"}]}"#,
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path(sidecar).unwrap();
+        assert!(status.found);
+        assert!(!status.trusted);
+        assert!(status.message.contains("does not match"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn temp_dir_path(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "satellite_data_toolkit_{name}_{}_{}",
+            std::process::id(),
+            nanos
+        ))
     }
 }

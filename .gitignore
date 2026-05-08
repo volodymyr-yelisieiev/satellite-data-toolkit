@@ -5,10 +5,12 @@
 /dist/
 /target/
 /src-tauri/target/
+/satellite_data_toolkit_rust/
 /.playwright-cli/
 /output/
 /artifacts/
 *.tsbuildinfo
+*.sha256
 
 # Local handoff/release artifacts
 *.zip

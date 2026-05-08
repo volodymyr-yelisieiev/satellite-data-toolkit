@@ -137,6 +137,19 @@ export interface DownloadResult {
   stderr: string;
 }
 
+export interface EumdacSidecarStatus {
+  found: boolean;
+  trusted: boolean;
+  path: string | null;
+  fileName: string | null;
+  sha256: string | null;
+  manifestPath: string | null;
+  version: string | null;
+  source: string | null;
+  license: string | null;
+  message: string;
+}
+
 export interface PvWattsRequest {
   latitude: number;
   longitude: number;

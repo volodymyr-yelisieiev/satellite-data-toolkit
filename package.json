@@ -10,8 +10,14 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "version:check": "node scripts/check-version-consistency.mjs",
+    "security:tauri-surface": "node scripts/check-tauri-surface.mjs",
+    "test": "vitest --run",
+    "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
+    "visual:smoke": "node scripts/visual-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1",
+    "verify": "node scripts/verify.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -28,7 +34,9 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.1",
+    "playwright": "^1.59.1",
     "typescript": "6.0.3",
-    "vite": "8.0.10"
+    "vite": "8.0.10",
+    "vitest": "4.1.5"
   }
 }

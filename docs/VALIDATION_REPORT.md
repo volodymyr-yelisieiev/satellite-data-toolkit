@@ -5,19 +5,81 @@ Machine: macOS 26.4.1 arm64, Apple Silicon local workstation
 Project version: 2.1.0  
 Scope: final local validation before handoff ZIP
 
+## 2026-05-08 Production Hardening Addendum
+
+Scope: repository hardening pass for the Tauri desktop app on branch `codex/production-hardening`.
+
+Additional changes validated locally:
+
+- Frontend unit tests added with Vitest for shared UI/domain helpers.
+- `./scripts/verify.sh` now runs version consistency checks, Tauri API surface checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
+- CI now verifies Ubuntu, macOS, and Windows runners.
+- A `macOS package` workflow now builds and uploads private-review DMG/checksum artifacts with the same local macOS packaging script on pull requests and manual dispatches.
+- Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
+- Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
+- Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, weekly Dependabot update configuration for npm, Cargo, and GitHub Actions, enabled GitHub Dependabot vulnerability alerts/automated security fixes, and `main` branch protection with required CI checks.
+- macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
+- Windows package and release workflows now run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics; the Windows package workflow runs on pull requests and manual dispatches.
+- EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
+- EUMETSAT credential testing now requires both keychain slots plus a ready sidecar status instead of marking a single stored slot as ready.
+- UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
+
+Local commands run successfully on May 8, 2026:
+
+```bash
+npm run test
+npm run version:check
+npm run security:tauri-surface
+npm run typecheck
+npm run build
+cargo fmt --all -- --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+npm audit --omit=dev
+```
+
+macOS packaging was also rerun successfully on May 8, 2026:
+
+```bash
+./scripts/build-macos.sh
+```
+
+Output:
+
+```text
+target/release/bundle/macos/Satellite Data Toolkit.app
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
+```
+
+Observed DMG SHA256:
+
+```text
+54f2a92fd8c85219a6a24e903b24cd51694471cb8bcc9cc9d7353f5d7e9fd2bf
+```
+
+The `macOS package` workflow also passed on branch `codex/production-hardening`. Run `25576345173` passed on `2e23ecb`, ran `./scripts/build-macos.sh`, and uploaded `macos-dmg` (6,353,733 bytes) plus `macos-sha256sum` (320 bytes) artifacts for private review.
+
+Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
+
+Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25575059659` passed on `8e0411f` and uploaded `windows-msi` (6,883,556 bytes), `windows-nsis` (5,484,150 bytes), `windows-sha256sums` (294 bytes), and `windows-msi-smoke-logs` (22,453 bytes) artifacts after the unified full verify preflight, optional signing-command no-op path, and MSI quiet install/uninstall smoke.
+
+Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags and Deflate-compressed TIFF inputs: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
+
 ## Executive Status
 
 | Area | Result | Notes |
 | --- | --- | --- |
-| macOS local app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies and mounts. |
+| macOS app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies, and the `macOS package` workflow uploads DMG/checksum artifacts. |
 | macOS public release | Not ready | Gatekeeper rejects ad-hoc app/DMG because Developer ID signing and notarization are not configured. |
-| Windows packaging | Configured, not verified | MSI/NSIS targets and script exist, but no Windows VM/runner was available in this workspace. |
+| Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; MSI quiet install/uninstall smoke is wired into Windows workflows. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
-| UI visual smoke | Pass with caveat | Key screens rendered at target widths with no persistent clipped text/controls detected. |
-| EUMETSAT | Partial | Sidecar command wiring exists, but no EUMDAC sidecar/credentials were available for live QA. |
+| UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
+| Repository maintenance | Baseline+ | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit, weekly Dependabot update policy, vulnerability alerts, automated security fixes, and required-check branch protection including macOS DMG plus Windows installer packaging are configured. |
+| EUMETSAT | Partial | Sidecar command wiring and checksum-manifest trust gate exist, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
-| NDVI | Partial production | Math/tests exist; production GeoTIFF CRS/tag preservation remains missing. |
+| NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, and Deflate-compressed TIFF inputs are covered in the pure-Rust path. |
 
 ## Subagent Audit Summary
 
@@ -25,8 +87,8 @@ Five validation passes were run in parallel before final fixes:
 
 - macOS packaging: verified local `.app`/DMG path, ad-hoc signature, DMG structure, and public-release signing gaps.
 - Windows packaging: confirmed MSI/NSIS config and listed required Windows 10/11 verification steps.
-- Security/reproducibility: confirmed CSP/env/keychain baseline and flagged missing cargo advisory policy plus sidecar trust hardening.
-- Product/API: confirmed NASA/local PV/saved-data/API-slot base and flagged EUMDAC CLI shape, PVWatts validation, NDVI GeoTIFF gaps.
+- Security/reproducibility: confirmed CSP/env/keychain baseline, added RustSec audit gates, and added EUMDAC sidecar checksum-manifest trust hardening.
+- Product/API: confirmed NASA/local PV/saved-data/API-slot base and flagged EUMDAC CLI shape, PVWatts validation, and NDVI real-world fixture QA gaps.
 - Docs/handoff: flagged README/PACKAGING as too thin and required explicit credentials, storage, release gaps, and ZIP contents.
 
 Fixes applied after those audits:
@@ -197,11 +259,11 @@ Viewport checks:
 
 ## Not Fully Verifiable In This Workspace
 
-- Windows MSI/NSIS build, install, launch, Credential Manager, WebView2, signing, and uninstall checks.
+- Windows MSI/NSIS install, launch, Credential Manager, WebView2, signing, and uninstall checks on real Windows 10/11 machines.
 - Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance.
 - EUMETSAT live product search/download because no bundled sidecar and test credentials were available.
 - PVWatts/NLR live API result because no API key was available.
-- Production NDVI georeferencing preservation because current implementation uses pure TIFF output rather than GDAL-backed GeoTIFF metadata preservation.
+- Broader NDVI fixture coverage for tiled and multi-provider GeoTIFFs beyond the local metadata/compression preservation tests.
 
 ## Release Recommendation
 
@@ -213,4 +275,4 @@ Do not present it as a public cross-platform release until:
 - macOS signing/notarization is configured;
 - EUMDAC sidecars are bundled and signed;
 - EUMETSAT/PVWatts live credentials are tested;
-- NDVI GeoTIFF metadata preservation is implemented if production geospatial output is required.
+- Broader NDVI GeoTIFF fixture QA is completed for the target satellite providers.

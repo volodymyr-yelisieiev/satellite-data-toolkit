@@ -37,7 +37,7 @@ npm --version
 cargo --version
 
 npm ci
-npm run build
+npm run verify
 npm run tauri:build -- --bundles msi,nsis
 Assert-WindowsGuiSubsystem "target\release\satellite-data-toolkit.exe"
 
@@ -50,3 +50,12 @@ Write-Host "MSI artifacts:"
 $msi | ForEach-Object { Write-Host " - $($_.FullName)" }
 Write-Host "NSIS artifacts:"
 $nsis | ForEach-Object { Write-Host " - $($_.FullName)" }
+
+$artifacts = @($msi) + @($nsis)
+$checksums = $artifacts | ForEach-Object {
+  $hash = Get-FileHash -Algorithm SHA256 -Path $_.FullName
+  "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
+}
+$checksumPath = "target\release\bundle\SHA256SUMS.txt"
+$checksums | Set-Content -Path $checksumPath -Encoding ascii
+Write-Host "SHA256 sums: $((Resolve-Path $checksumPath).Path)"

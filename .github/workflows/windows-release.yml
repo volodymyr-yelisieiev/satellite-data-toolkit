@@ -1,9 +1,15 @@
-name: Windows release
+name: Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and publish"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,13 +18,15 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  release:
-    name: Build and publish Windows release
+  windows:
+    name: Build Windows installers
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -40,36 +48,86 @@ jobs:
         shell: pwsh
         run: .\scripts\build-windows.ps1
 
-      - name: Upload MSI artifact
+      - name: Upload Windows release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-msi
-          path: target\release\bundle\msi\*.msi
+          name: release-windows
+          path: |
+            target\release\bundle\msi\*.msi
+            target\release\bundle\nsis\*.exe
           if-no-files-found: error
 
-      - name: Upload NSIS artifact
+  macos:
+    name: Build macOS DMG
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build macOS app and DMG
+        shell: bash
+        run: ./scripts/build-macos.sh
+
+      - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-nsis
-          path: target\release\bundle\nsis\*.exe
+          name: release-macos
+          path: |
+            target/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
-      - name: Publish GitHub release
-        shell: pwsh
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-24.04
+    needs:
+      - windows
+      - macos
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
         run: |
-          $tag = "${{ github.ref_name }}"
-          $repo = "${{ github.repository }}"
-          $assets = @(
-            (Get-ChildItem -Path "target\release\bundle\msi" -Filter "*.msi" -ErrorAction Stop).FullName
-            (Get-ChildItem -Path "target\release\bundle\nsis" -Filter "*.exe" -ErrorAction Stop).FullName
-          )
-          $notes = "Windows patch release. Fixes Windows launch so the app opens without an extra terminal window."
+          set -euo pipefail
+          mkdir -p release-assets
+          find downloaded-artifacts -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \) -exec cp '{}' release-assets/ \;
+          if ! find release-assets -type f ! -name 'SHA256SUMS.txt' -print -quit | grep -q .; then
+            echo "No release artifacts were downloaded" >&2
+            exit 1
+          fi
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
 
-          gh release view $tag --repo $repo *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag --repo $repo @assets --clobber
-          } else {
-            gh release create $tag --repo $repo --title "Satellite Data Toolkit $tag" --notes $notes @assets
-          }
+          notes="Cross-platform Satellite Data Toolkit release with macOS DMG and Windows MSI/NSIS installers. See README.md and docs/PACKAGING.md for signing, notarization, and platform QA status."
+
+          if gh release view "$TAG_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" --repo "$GH_REPO" release-assets/* --clobber
+          else
+            gh release create "$TAG_NAME" --repo "$GH_REPO" --title "Satellite Data Toolkit $TAG_NAME" --notes "$notes" release-assets/*
+          fi

@@ -6,25 +6,25 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 ## Reviewer Snapshot
 
-- Current package status: macOS Apple Silicon local review build works; Windows packaging is configured but not verified on a Windows machine.
-- Current UI status: implemented desktop shell matching the requested dark toolkit structure: sidebar, top workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
+- Current package status: macOS and Windows packaging scripts are configured with checksums; Windows package/release workflows exist, and the release workflow now publishes macOS DMG plus Windows MSI/NSIS on `v*` tags.
+- Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI are implemented.
-- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled EUMDAC sidecar, production EUMETSAT credential wiring, PVWatts live verification with a real key, and GeoTIFF CRS/tag preservation for NDVI.
+- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and GeoTIFF CRS/tag preservation for NDVI.
 
 ## Feature Status
 
 | Area | Status | Notes |
 | --- | --- | --- |
 | macOS app/DMG | Partial release-ready | Builds locally and is ad-hoc signed. Public distribution still needs Developer ID, hardened runtime, notarization, `spctl`, and `stapler` checks. |
-| Windows MSI/NSIS | Configured, not verified | Tauri config and PowerShell build script exist. Needs Windows 10/11 VM or CI runner for real packaging QA. |
+| Windows MSI/NSIS | Configured with CI build | Tauri config and PowerShell build script produce MSI/NSIS and checksums. Needs Windows 10/11 install/uninstall QA. |
 | NASA POWER | Implemented | Uses JSON API, normalizes daily/hourly records, preserves units metadata, handles fill values. NASA POWER does not need an API key. |
 | Saved Data | Implemented | Saves datasets to SQLite, supports preview, delete, and CSV/JSON export. |
 | API Slots | Implemented base | Stores credentials in OS keychain under service `Satellite Data Toolkit`; no secrets are written to SQLite or logs. |
 | PV Local Estimate | Implemented approximate | Uses normalized NASA POWER irradiance with explicit assumptions and missing-record accounting. |
 | PVWatts/NLR | Implemented, needs key QA | Uses `developer.nlr.gov` endpoint and stored `nlr_pvwatts_key`; live validation requires a real key. |
 | NDVI | Partial production | Reads two TIFF rasters and writes Float32 NDVI TIFF. It does not yet preserve CRS/GeoTIFF tags or automatically use input nodata metadata. |
-| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. EUMDAC binary is not bundled yet and live auth must be finished with real credentials. |
-| Security posture | Baseline | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted. Needs cargo advisory policy and signed sidecars before public release. |
+| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. EUMDAC binary still must be bundled/signed and live QA requires real credentials. |
+| Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, and EUMDAC process errors redact stored secrets. Needs cargo advisory policy and signed sidecars before public release. |
 
 ## Included Workflows
 
@@ -89,6 +89,8 @@ eumdac-cli.exe
 
 next to the packaged executable. Production packaging should place platform-specific EUMDAC binaries under `src-tauri/binaries/`, add them to `src-tauri/tauri.conf.json > bundle.externalBin`, verify checksum/license/source, and sign/notarize them with the app.
 
+EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Process errors are redacted before being returned to the UI.
+
 ## Credentials
 
 Credential slots are stored in the OS keychain with service name `Satellite Data Toolkit`.
@@ -101,7 +103,7 @@ Credential slots are stored in the OS keychain with service name `Satellite Data
 
 NASA POWER does not require an API key.
 
-Important: EUMETSAT credential presence is checked by the app, but final sidecar authentication must be validated against the exact bundled EUMDAC distribution and its supported credential mechanism.
+Important: EUMETSAT credential sync is implemented for the sidecar workflow, but final authentication/search/download behavior must be validated against the exact bundled EUMDAC distribution and real credentials.
 
 ## Local Storage
 
@@ -171,7 +173,10 @@ Run all local checks:
 
 This currently runs:
 
+- `npm run typecheck`
+- `npm run test`
 - `npm run build`
+- `cargo fmt --all -- --check`
 - `cargo test --workspace --locked`
 - `cargo check --workspace --locked`
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`
@@ -190,7 +195,7 @@ target/release/bundle/macos/Satellite Data Toolkit.app
 target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
-The script performs a local ad-hoc signature and verifies the `.app` with `codesign --verify --deep --strict`. It also rebuilds the DMG with an `/Applications` symlink and verifies the DMG with `hdiutil verify`.
+The script performs a local ad-hoc signature and verifies the `.app` with `codesign --verify --deep --strict`. It also rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -207,9 +212,25 @@ Expected outputs:
 ```text
 target\release\bundle\msi\
 target\release\bundle\nsis\
+target\release\bundle\SHA256SUMS.txt
 ```
 
 Current status: configured but not verified. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+
+## GitHub CI/CD
+
+The default CI workflow runs local verification on Ubuntu, macOS, and Windows. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+
+```text
+macOS DMG
+Windows MSI
+Windows NSIS installer
+SHA256SUMS.txt
+```
+
+and uploads those assets to the matching GitHub release.
+
+Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
 
 ## Review ZIP Contents
 
@@ -235,10 +256,10 @@ It intentionally excludes heavy/generated/local files:
 
 ## Known Missing Work Before Public Release
 
-- Windows artifact build and install/uninstall QA on Windows 10/11.
+- Windows install/uninstall QA on Windows 10/11.
 - Apple Developer ID signing, hardened runtime, notarization, stapling, and public Gatekeeper acceptance.
 - Bundled, signed, checksum-verified EUMDAC sidecar per platform.
-- Live EUMETSAT auth/search/download QA with real credentials.
+- Live EUMETSAT auth/search/download QA with real credentials and the exact bundled sidecar.
 - Live PVWatts/NLR QA with real API key.
 - Production NDVI GeoTIFF support with CRS/geotransform/tag preservation and input nodata metadata.
 - Cargo advisory policy such as `cargo audit` or `cargo deny`.

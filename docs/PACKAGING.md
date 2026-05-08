@@ -4,8 +4,8 @@ This project is cross-platform by design, but packaging must be performed on nat
 
 Current verified state:
 
-- macOS Apple Silicon: built and locally verified.
-- Windows: configured only; not built or installed on Windows in this workspace.
+- macOS Apple Silicon: built and locally verified before this hardening pass; current script is checksum-producing and architecture/version agnostic.
+- Windows: configured with GitHub Actions packaging and release workflows; install/uninstall QA still requires Windows 10/11 machines.
 
 ## Build-Time Requirements
 
@@ -41,7 +41,10 @@ Run:
 This fails fast if Node, npm, or Cargo is unavailable, then runs:
 
 ```text
+npm run typecheck
+npm run test
 npm run build
+cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo check --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -76,12 +79,13 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 The script:
 
 - installs npm dependencies with `npm ci`;
-- builds TypeScript/Vite assets;
+- runs full verification;
 - runs `tauri build --bundles app,dmg`;
 - applies ad-hoc signing to the `.app`;
 - verifies with `codesign --verify --deep --strict --verbose=2`;
 - rebuilds the DMG with the `.app` and an `/Applications` symlink;
-- verifies the DMG with `hdiutil verify`.
+- verifies the DMG with `hdiutil verify`;
+- writes a `.sha256` checksum next to the DMG.
 
 Current limitation: the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It is suitable for private review, not public distribution.
 
@@ -130,6 +134,7 @@ Expected outputs:
 ```text
 target\release\bundle\msi\
 target\release\bundle\nsis\
+target\release\bundle\SHA256SUMS.txt
 ```
 
 The Tauri config currently enables:
@@ -168,7 +173,13 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: configured, not verified.
+Current Windows status remains: build configured with CI artifacts; native install/uninstall QA is still required.
+
+## GitHub Release Workflow
+
+The `Release` workflow runs on `v*` tags or manual dispatch with an existing tag. It builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release.
+
+As of May 8, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags and be promoted as latest after macOS and Windows artifacts are attached.
 
 ## EUMDAC Sidecar Packaging
 
@@ -194,11 +205,12 @@ For production:
 7. Validate these CLI shapes against the bundled EUMDAC version:
 
 ```text
+eumdac set-credentials <consumer_key> <consumer_secret>
 eumdac search -c <collection> -s <start> -e <end> --bbox <v1> <v2> <v3> <v4> --limit <n>
 eumdac download -c <collection> -p <product> -o <output_dir>
 ```
 
-Important: the app currently checks that both EUMETSAT keychain slots exist, but the final sidecar credential handoff must be confirmed for the exact EUMDAC binary used. If EUMDAC expects its own credential store or environment variables, wire that explicitly and keep secrets out of logs.
+Important: the app reads both EUMETSAT keychain slots and syncs them to EUMDAC immediately before search/download using an app-scoped EUMDAC config environment. Confirm this behavior against the exact sidecar binary. Keep secrets out of logs and review whether EUMDAC persists credentials in any sidecar-managed config file.
 
 ## Artifact Handoff
 

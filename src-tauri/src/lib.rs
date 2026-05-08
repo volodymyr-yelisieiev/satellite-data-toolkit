@@ -48,6 +48,11 @@ struct CredentialTestResult {
     message: String,
 }
 
+struct EumetsatCredentials {
+    consumer_key: String,
+    consumer_secret: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EumetsatQuery {
@@ -303,14 +308,15 @@ fn check_eumdac_sidecar() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn fetch_eumetsat_products(query: EumetsatQuery) -> Result<ProductList, String> {
-    ensure_eumetsat_credentials()?;
+fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
     let sidecar =
         find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
     validate_eumetsat_query(&query)?;
+    sync_eumdac_credentials(&app, &sidecar)?;
     let limit = query.limit.clamp(1, 100).to_string();
     let bbox = parse_eumdac_bbox(&query.bbox)?;
     let mut command = Command::new(sidecar);
+    configure_eumdac_command(&app, &mut command)?;
     command.args([
         "search",
         "-c",
@@ -340,13 +346,14 @@ fn fetch_eumetsat_products(query: EumetsatQuery) -> Result<ProductList, String> 
 
 #[tauri::command]
 fn download_eumetsat_product(
+    app: AppHandle,
     collection_id: String,
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
-    ensure_eumetsat_credentials()?;
     let sidecar =
         find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
+    sync_eumdac_credentials(&app, &sidecar)?;
     let clean_collection_id = collection_id.trim().to_string();
     let clean_product_id = product_id.trim().to_string();
     if clean_collection_id.is_empty() {
@@ -359,7 +366,9 @@ fn download_eumetsat_product(
     if !output_path.exists() || !output_path.is_dir() {
         return Err("output directory must exist".to_string());
     }
-    let output = Command::new(sidecar)
+    let mut command = Command::new(sidecar);
+    configure_eumdac_command(&app, &mut command)?;
+    let output = command
         .args([
             "download",
             "-c",
@@ -579,15 +588,66 @@ fn get_api_key(name: &str) -> Result<Option<String>, String> {
     }
 }
 
-fn ensure_eumetsat_credentials() -> Result<(), String> {
-    let has_key = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
-    let has_secret =
-        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
-    if has_key && has_secret {
+fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
+    let consumer_key = get_api_key("eumetsat_consumer_key")?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
+    let consumer_secret = get_api_key("eumetsat_consumer_secret")?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
+    Ok(EumetsatCredentials {
+        consumer_key,
+        consumer_secret,
+    })
+}
+
+fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String> {
+    let credentials = get_eumetsat_credentials()?;
+    let mut command = Command::new(sidecar);
+    configure_eumdac_command(app, &mut command)?;
+    let output = command
+        .args([
+            "set-credentials",
+            credentials.consumer_key.as_str(),
+            credentials.consumer_secret.as_str(),
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let mut fallback = Command::new(sidecar);
+    configure_eumdac_command(app, &mut fallback)?;
+    let fallback_output = fallback
+        .args([
+            "--set-credentials",
+            credentials.consumer_key.as_str(),
+            credentials.consumer_secret.as_str(),
+        ])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if fallback_output.status.success() {
         Ok(())
     } else {
-        Err("EUMETSAT consumer key and secret must both be stored".to_string())
+        Err(redacted_process_error_with_secrets(
+            &fallback_output.stderr,
+            &[
+                credentials.consumer_key.as_str(),
+                credentials.consumer_secret.as_str(),
+            ],
+        ))
     }
+}
+
+fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<(), String> {
+    let config_dir = app_data_dir(app)?.join("eumdac");
+    fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
+    command
+        .env("EUMDAC_CONFIG_DIR", &config_dir)
+        .env("XDG_CONFIG_HOME", &config_dir)
+        .env("APPDATA", &config_dir);
+    Ok(())
 }
 
 fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
@@ -692,13 +752,25 @@ fn json_products(value: serde_json::Value) -> Vec<EumetsatProduct> {
 }
 
 fn redacted_process_error(stderr: &[u8]) -> String {
+    redacted_process_error_with_secrets(stderr, &[])
+}
+
+fn redacted_process_error_with_secrets(stderr: &[u8], secrets: &[&str]) -> String {
     let message = String::from_utf8_lossy(stderr);
     if message.trim().is_empty() {
         "EUMDAC command failed".to_string()
     } else {
-        message
+        let mut redacted = message
             .replace("consumer_secret", "consumer_secret[redacted]")
-            .replace("consumer_key", "consumer_key[redacted]")
+            .replace("consumer_key", "consumer_key[redacted]");
+        for secret in secrets
+            .iter()
+            .map(|secret| secret.trim())
+            .filter(|secret| !secret.is_empty())
+        {
+            redacted = redacted.replace(secret, "[redacted]");
+        }
+        redacted
     }
 }
 
@@ -792,5 +864,16 @@ mod tests {
         assert_eq!(products.len(), 2);
         assert_eq!(products[0].id, "PRODUCT_A");
         assert_eq!(products[1].title, "PRODUCT_B");
+    }
+
+    #[test]
+    fn redacts_eumdac_secret_values_from_process_errors() {
+        let message = redacted_process_error_with_secrets(
+            b"consumer_key abc123 failed with consumer_secret def456",
+            &["abc123", "def456"],
+        );
+        assert!(!message.contains("abc123"));
+        assert!(!message.contains("def456"));
+        assert!(message.contains("[redacted]"));
     }
 }

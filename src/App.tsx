@@ -25,7 +25,18 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  apiSlots,
+  availableParams,
+  compactUnit,
+  errorMessage,
+  formatNumber,
+  initialRequest,
+  quickExamples,
+  timestamp,
+  toFiniteNumber,
+} from "./domain";
 import type {
   ActivityLogEntry,
   CredentialTestResult,
@@ -72,64 +83,15 @@ const powerTabs = [
   { id: "pv" as Screen, title: "PV ESTIMATE", icon: BarChart3 },
 ];
 
-const availableParams = [
-  "ALLSKY_SFC_SW_DWN",
-  "T2M",
-  "WS2M",
-  "RH2M",
-  "PRECTOTCORR",
-  "PS",
-  "T2M_MAX",
-  "T2M_MIN",
-];
-
-const quickExamples = [
-  { name: "New York", lat: 40.7128, lon: -74.006 },
-  { name: "Los Angeles", lat: 34.0522, lon: -118.2437 },
-  { name: "London", lat: 51.5072, lon: -0.1276 },
-  { name: "Tokyo", lat: 35.6762, lon: 139.6503 },
-  { name: "Sydney", lat: -33.8688, lon: 151.2093 },
-];
-
-const apiSlots = [
-  { name: "eumetsat_consumer_key", label: "EUMETSAT Key", type: "password" },
-  { name: "eumetsat_consumer_secret", label: "EUMETSAT Secret", type: "password" },
-  { name: "nlr_pvwatts_key", label: "PVWatts/NLR Key", type: "password" },
-];
-
-const initialRequest: PowerRequest = {
-  latitude: 40.7128,
-  longitude: -74.006,
-  startDate: "2024-05-01",
-  endDate: "2024-05-31",
-  parameters: ["ALLSKY_SFC_SW_DWN", "T2M", "WS2M"],
-  temporal: "daily",
-  community: "RE",
-  timeStandard: "LST",
-};
-
-function timestamp() {
-  return new Date().toLocaleTimeString("en-GB");
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function formatNumber(value: number | null | undefined) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return "-";
-  }
-  return Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(2);
-}
-
-function compactUnit(unit: string | undefined) {
-  if (!unit) return "";
-  return unit.replace("kWh/m^2/day", "kWh/m2/day").replace("kW-hr/m^2/day", "kWh/m2/day").replace("Wh/m^2", "Wh/m2");
+function screenFromHash(): Screen {
+  if (typeof window === "undefined") return "power";
+  const candidate = window.location.hash.replace(/^#/, "");
+  return navItems.some((item) => item.id === candidate) ? (candidate as Screen) : "power";
 }
 
 function App() {
-  const [active, setActive] = useState<Screen>("power");
+  const [active, setActive] = useState<Screen>(screenFromHash);
+  const navListRef = useRef<HTMLElement | null>(null);
   const [request, setRequest] = useState<PowerRequest>(initialRequest);
   const [dataset, setDataset] = useState<PowerDataset | null>(null);
   const [loading, setLoading] = useState(false);
@@ -158,13 +120,35 @@ function App() {
     void refreshSavedCount();
   }, []);
 
+  useEffect(() => {
+    function handleHashChange() {
+      setActive(screenFromHash());
+    }
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (window.location.hash !== `#${active}`) {
+      window.history.replaceState(null, "", `#${active}`);
+    }
+    navListRef.current
+      ?.querySelector<HTMLElement>(`[data-screen="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   function addLog(message: string) {
     setLogs((current) => [...current.slice(-80), { time: timestamp(), message }]);
   }
 
   async function refreshSavedCount() {
-    const saved = await listSavedDatasets();
-    setSavedCount(saved.length);
+    try {
+      const saved = await listSavedDatasets();
+      setSavedCount(saved.length);
+    } catch (err) {
+      setSavedCount(0);
+      addLog(`Saved dataset count failed: ${errorMessage(err)}`);
+    }
   }
 
   function updateRequest<K extends keyof PowerRequest>(key: K, value: PowerRequest[K]) {
@@ -273,7 +257,14 @@ function App() {
 
   async function refreshApiStatus() {
     const entries = await Promise.all(
-      apiSlots.map(async ({ name }) => [name, await invoke<boolean>("has_api_key", { name })] as const),
+      apiSlots.map(async ({ name }) => {
+        try {
+          return [name, await invoke<boolean>("has_api_key", { name })] as const;
+        } catch (err) {
+          addLog(`API slot status failed for ${name}: ${errorMessage(err)}`);
+          return [name, false] as const;
+        }
+      }),
     );
     setApiStatus(Object.fromEntries(entries));
   }
@@ -289,10 +280,10 @@ function App() {
             <span>SATELLITE</span>
             <strong>DATA TOOLKIT</strong>
           </div>
-          <small>v2.1.0</small>
+          <small>v{__APP_VERSION__}</small>
         </div>
 
-        <nav className="nav-list" aria-label="Main navigation">
+        <nav className="nav-list" aria-label="Main navigation" ref={navListRef}>
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
@@ -300,6 +291,7 @@ function App() {
                 key={item.id}
                 aria-current={active === item.id ? "page" : undefined}
                 className={active === item.id ? "nav-item active" : "nav-item"}
+                data-screen={item.id}
                 onClick={() => setActive(item.id)}
               >
                 <Icon size={24} />
@@ -468,11 +460,11 @@ function PowerScreen(props: {
           <div className="field-grid two">
             <label>
               Latitude
-              <input value={props.request.latitude} type="number" step="0.0001" onChange={(event) => props.updateRequest("latitude", Number(event.target.value))} />
+              <input value={props.request.latitude} type="number" step="0.0001" onChange={(event) => props.updateRequest("latitude", toFiniteNumber(event.target.value, props.request.latitude))} />
             </label>
             <label>
               Longitude
-              <input value={props.request.longitude} type="number" step="0.0001" onChange={(event) => props.updateRequest("longitude", Number(event.target.value))} />
+              <input value={props.request.longitude} type="number" step="0.0001" onChange={(event) => props.updateRequest("longitude", toFiniteNumber(event.target.value, props.request.longitude))} />
             </label>
             <label>
               Start Date
@@ -771,7 +763,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
           <label>
             Limit
-            <input type="number" value={query.limit} onChange={(event) => update("limit", Number(event.target.value))} />
+            <input type="number" min="1" max="100" value={query.limit} onChange={(event) => update("limit", toFiniteNumber(event.target.value, query.limit))} />
           </label>
           <label>
             Output Directory
@@ -896,11 +888,11 @@ function NdviScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
           <label>
             Red Scale
-            <input type="number" step="0.0001" value={job.redScale} onChange={(event) => update("redScale", Number(event.target.value))} />
+            <input type="number" step="0.0001" value={job.redScale} onChange={(event) => update("redScale", toFiniteNumber(event.target.value, job.redScale))} />
           </label>
           <label>
             NIR Scale
-            <input type="number" step="0.0001" value={job.nirScale} onChange={(event) => update("nirScale", Number(event.target.value))} />
+            <input type="number" step="0.0001" value={job.nirScale} onChange={(event) => update("nirScale", toFiniteNumber(event.target.value, job.nirScale))} />
           </label>
           <label>
             Output File
@@ -908,7 +900,7 @@ function NdviScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
           <label>
             Nodata Value
-            <input type="number" value={job.nodataValue ?? -9999} onChange={(event) => update("nodataValue", Number(event.target.value))} />
+            <input type="number" value={job.nodataValue ?? -9999} onChange={(event) => update("nodataValue", toFiniteNumber(event.target.value, job.nodataValue ?? -9999))} />
           </label>
         </div>
         <div className="action-row left wrap">
@@ -978,7 +970,7 @@ function PvScreen(props: {
           <div className="field-grid two">
             <label>
               PV Capacity (kW)
-              <input type="number" value={props.capacity} onChange={(event) => props.setCapacity(Number(event.target.value))} />
+              <input type="number" min="0.001" value={props.capacity} onChange={(event) => props.setCapacity(toFiniteNumber(event.target.value, props.capacity))} />
             </label>
             <label>
               Irradiance Column
@@ -986,19 +978,19 @@ function PvScreen(props: {
             </label>
             <label>
               System Losses (%)
-              <input type="number" value={props.losses} onChange={(event) => props.setLosses(Number(event.target.value))} />
+              <input type="number" min="-5" max="99.99" value={props.losses} onChange={(event) => props.setLosses(toFiniteNumber(event.target.value, props.losses))} />
             </label>
             <label>
               Inverter Efficiency (%)
-              <input type="number" value={props.inverter} onChange={(event) => props.setInverter(Number(event.target.value))} />
+              <input type="number" min="0" max="100" value={props.inverter} onChange={(event) => props.setInverter(toFiniteNumber(event.target.value, props.inverter))} />
             </label>
             <label>
               Tilt (deg)
-              <input type="number" value={props.tilt} onChange={(event) => props.setTilt(Number(event.target.value))} />
+              <input type="number" min="0" max="90" value={props.tilt} onChange={(event) => props.setTilt(toFiniteNumber(event.target.value, props.tilt))} />
             </label>
             <label>
               Azimuth (deg)
-              <input type="number" value={props.azimuth} onChange={(event) => props.setAzimuth(Number(event.target.value))} />
+              <input type="number" min="0" max="359.999" value={props.azimuth} onChange={(event) => props.setAzimuth(toFiniteNumber(event.target.value, props.azimuth))} />
             </label>
           </div>
           <p className="muted-result">PVWatts location: {source.latitude.toFixed(4)}, {source.longitude.toFixed(4)}</p>
@@ -1277,8 +1269,8 @@ function AboutScreen() {
       </section>
       <div className="card about-card">
         <p>
-          Current release status: macOS local build is supported; Windows installers, Apple notarization,
-          EUMDAC bundling, and live PVWatts/NLR validation require external release credentials or platform runners.
+          Current release status: macOS and Windows packaging are automated; public Apple notarization,
+          Windows install QA, EUMDAC bundling, and live PVWatts/NLR validation require release credentials or target platforms.
         </p>
         <div className="source-list">
           <a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">NASA POWER API</a>

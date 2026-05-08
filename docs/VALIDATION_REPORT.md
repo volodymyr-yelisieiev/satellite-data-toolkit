@@ -5,6 +5,56 @@ Machine: macOS 26.4.1 arm64, Apple Silicon local workstation
 Project version: 2.1.0  
 Scope: final local validation before handoff ZIP
 
+## 2026-05-08 Production Hardening Addendum
+
+Scope: repository hardening pass for the Tauri desktop app on branch `codex/production-hardening`.
+
+Additional changes validated locally:
+
+- Frontend unit tests added with Vitest for shared UI/domain helpers.
+- `./scripts/verify.sh` now runs TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
+- CI now verifies Ubuntu, macOS, and Windows runners.
+- Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
+- macOS and Windows packaging scripts now avoid hardcoded artifact versions and emit checksums.
+- EUMETSAT sidecar calls now sync keychain credentials into EUMDAC before search/download and redact secret values from process errors.
+- UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
+
+Local commands run successfully on May 8, 2026:
+
+```bash
+npm run test
+npm run typecheck
+npm run build
+cargo fmt --all -- --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+npm audit --omit=dev
+```
+
+macOS packaging was also rerun successfully on May 8, 2026:
+
+```bash
+./scripts/build-macos.sh
+```
+
+Output:
+
+```text
+target/release/bundle/macos/Satellite Data Toolkit.app
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
+```
+
+Observed DMG SHA256:
+
+```text
+78f070dce48f11adc10bc44706bfb3cf0a4ba05595560aee76bf5d70d04c7a65
+```
+
+Browser visual smoke screenshots were captured for `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows.
+
+Remaining external blockers are unchanged: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and production GeoTIFF metadata preservation for NDVI.
+
 ## Executive Status
 
 | Area | Result | Notes |

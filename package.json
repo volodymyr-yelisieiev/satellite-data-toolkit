@@ -12,6 +12,8 @@
     "dev": "vite --host 127.0.0.1",
     "version:check": "node scripts/check-version-consistency.mjs",
     "security:tauri-surface": "node scripts/check-tauri-surface.mjs",
+    "security:npm-prod": "npm audit --omit=dev",
+    "security:npm-build-chain": "npm audit --audit-level=high",
     "test": "vitest --run",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",

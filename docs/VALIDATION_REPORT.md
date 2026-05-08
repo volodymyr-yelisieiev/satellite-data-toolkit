@@ -9,6 +9,15 @@ Scope: final local validation before handoff ZIP
 
 Scope: repository hardening pass for the Tauri desktop app on branch `codex/production-hardening`.
 
+### 2026-05-09 Npm Build-Chain Audit Policy
+
+The npm security gate now has an explicit release policy:
+
+- production dependencies must pass `npm run security:npm-prod`, which runs `npm audit --omit=dev` with no known findings;
+- the full dependency tree, including dev/build tooling, must pass `npm run security:npm-build-chain`, which runs `npm audit --audit-level=high` and blocks release on high or critical findings.
+
+Local verification on May 9, 2026 passed both npm gates and the full `npm run verify` suite with the updated policy.
+
 Additional changes validated locally:
 
 - Frontend unit tests added with Vitest for shared UI/domain helpers.

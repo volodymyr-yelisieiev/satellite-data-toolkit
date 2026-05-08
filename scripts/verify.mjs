@@ -17,7 +17,8 @@ const commands = [
   ["cargo", ["test", "--workspace", "--locked"]],
   ["cargo", ["check", "--workspace", "--locked"]],
   ["cargo", ["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]],
-  ["npm", ["audit", "--omit=dev"]],
+  ["npm", ["run", "security:npm-prod"]],
+  ["npm", ["run", "security:npm-build-chain"]],
 ];
 
 for (const [command, args] of commands) {

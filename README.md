@@ -185,7 +185,10 @@ This currently runs:
 - `cargo test --workspace --locked`
 - `cargo check --workspace --locked`
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- `npm audit --omit=dev`
+- `npm run security:npm-prod`
+- `npm run security:npm-build-chain`
+
+Npm security policy is split by release risk: production dependencies must have zero known audit findings, while the full dependency tree including dev/build tooling blocks release on high or critical findings.
 
 ## Build macOS
 

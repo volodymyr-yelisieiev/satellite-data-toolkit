@@ -51,7 +51,8 @@ cargo fmt --all -- --check
 cargo test --workspace --locked
 cargo check --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-npm audit --omit=dev
+npm run security:npm-prod
+npm run security:npm-build-chain
 ```
 
 `./scripts/audit-rust.sh` requires `cargo-audit`:
@@ -60,7 +61,7 @@ npm audit --omit=dev
 cargo install cargo-audit --locked --version 0.22.1
 ```
 
-The GitHub RustSec audit workflow and release workflow gate install `cargo-audit` 0.22.1 and run the same script. The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
+The GitHub RustSec audit workflow and release workflow gate install `cargo-audit` 0.22.1 and run the same script. Npm security policy is split by release risk: `security:npm-prod` requires zero known audit findings in production dependencies, and `security:npm-build-chain` audits the full dependency tree, including dev/build tooling, with a high-severity release gate.
 
 `npm run visual:smoke` builds the app, starts `vite preview`, and captures the `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` screens at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. CI uploads those screenshots as the `visual-smoke` artifact.
 

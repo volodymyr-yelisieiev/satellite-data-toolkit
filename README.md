@@ -202,7 +202,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-The manual `macOS package` workflow runs the same script on `macos-latest` and uploads the DMG plus checksum for private review builds.
+The `macOS package` workflow runs the same script on `macos-latest` for packaging-related pull request changes and manual dispatches, then uploads the DMG plus checksum for private review builds.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -226,7 +226,7 @@ Current status: MSI/NSIS packaging is configured and has produced CI artifacts w
 
 ## GitHub CI/CD
 
-The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Manual package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
 
 ```text
 macOS DMG

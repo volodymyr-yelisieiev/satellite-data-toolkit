@@ -90,7 +90,7 @@ The script:
 - verifies the DMG with `hdiutil verify`;
 - writes a `.sha256` checksum next to the DMG.
 
-The manual `macOS package` GitHub workflow runs this script on `macos-latest` and uploads `macos-dmg` and `macos-sha256sum` artifacts for private review. It does not bypass the public-release signing/notarization requirements below.
+The `macOS package` GitHub workflow runs this script on `macos-latest` for packaging-related pull request changes and manual dispatches. It uploads `macos-dmg` and `macos-sha256sum` artifacts for private review and does not bypass the public-release signing/notarization requirements below.
 
 Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It is suitable for private review, not public distribution.
 
@@ -198,7 +198,7 @@ Optional release signing secrets:
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Apple ID notarization credential path. |
 | `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8_BASE64` | App Store Connect API notarization credential path. |
 
-When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally, the manual `macOS package` workflow, or the manual `Windows package` workflow for private-review artifacts; the public `Release` workflow is intentionally blocked.
+When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally, the `macOS package` workflow, or the manual `Windows package` workflow for private-review artifacts; the public `Release` workflow is intentionally blocked.
 
 As of May 8, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags and be promoted as latest after macOS and Windows artifacts are attached.
 

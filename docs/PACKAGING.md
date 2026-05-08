@@ -5,7 +5,7 @@ This project is cross-platform by design, but packaging must be performed on nat
 Current verified state:
 
 - macOS Apple Silicon: built and locally verified before this hardening pass; current script is checksum-producing and architecture/version agnostic.
-- Windows: configured with GitHub Actions packaging and release workflows; install/uninstall QA still requires Windows 10/11 machines.
+- Windows: GitHub Actions packaging has produced MSI/NSIS/checksum artifacts from this branch; install/uninstall QA still requires Windows 10/11 machines.
 
 ## Build-Time Requirements
 

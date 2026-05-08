@@ -48,10 +48,12 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
 Observed DMG SHA256:
 
 ```text
-78f070dce48f11adc10bc44706bfb3cf0a4ba05595560aee76bf5d70d04c7a65
+a52909593ccfa9d7f10538d41efab9c780c22f0d51d51471a95a00cb4984639c
 ```
 
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
+
+Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25562003258` passed in 4m45s and uploaded `windows-msi`, `windows-nsis`, and `windows-sha256sums` artifacts.
 
 Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 
@@ -61,7 +63,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | --- | --- | --- |
 | macOS local app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies and mounts. |
 | macOS public release | Not ready | Gatekeeper rejects ad-hoc app/DMG because Developer ID signing and notarization are not configured. |
-| Windows packaging | Configured, not verified | MSI/NSIS targets and script exist, but no Windows VM/runner was available in this workspace. |
+| Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; real install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
@@ -247,7 +249,7 @@ Viewport checks:
 
 ## Not Fully Verifiable In This Workspace
 
-- Windows MSI/NSIS build, install, launch, Credential Manager, WebView2, signing, and uninstall checks.
+- Windows MSI/NSIS install, launch, Credential Manager, WebView2, signing, and uninstall checks on real Windows 10/11 machines.
 - Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance.
 - EUMETSAT live product search/download because no bundled sidecar and test credentials were available.
 - PVWatts/NLR live API result because no API key was available.

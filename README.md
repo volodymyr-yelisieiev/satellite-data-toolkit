@@ -6,7 +6,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 ## Reviewer Snapshot
 
-- Current package status: macOS and Windows packaging scripts are configured with checksums; Windows package/release workflows exist, and the release workflow now publishes macOS DMG plus Windows MSI/NSIS on `v*` tags.
+- Current package status: macOS and Windows packaging scripts are configured with checksums; Windows MSI/NSIS CI packaging has been verified, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
 - Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.

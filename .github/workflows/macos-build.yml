@@ -17,16 +17,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy,rustfmt
 
@@ -40,14 +40,14 @@ jobs:
         run: ./scripts/build-macos.sh
 
       - name: Upload macOS DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-dmg
           path: target/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
       - name: Upload macOS checksum
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-sha256sum
           path: target/release/bundle/dmg/*.sha256

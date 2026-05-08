@@ -17,16 +17,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy,rustfmt
 
@@ -47,28 +47,28 @@ jobs:
 
       - name: Upload MSI smoke logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-msi-smoke-logs
           path: target\release\bundle\msi-smoke\*.log
           if-no-files-found: ignore
 
       - name: Upload MSI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-msi
           path: target\release\bundle\msi\*.msi
           if-no-files-found: error
 
       - name: Upload NSIS artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-nsis
           path: target\release\bundle\nsis\*.exe
           if-no-files-found: error
 
       - name: Upload Windows checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-sha256sums
           path: target\release\bundle\SHA256SUMS.txt

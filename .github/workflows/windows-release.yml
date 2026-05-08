@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Require public release signing secrets
         shell: bash
@@ -47,12 +47,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
@@ -74,18 +74,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy,rustfmt
 
@@ -106,14 +106,14 @@ jobs:
 
       - name: Upload MSI smoke logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-windows-msi-smoke-logs
           path: target\release\bundle\msi-smoke\*.log
           if-no-files-found: ignore
 
       - name: Upload Windows release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-windows
           path: |
@@ -142,18 +142,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy,rustfmt
 
@@ -213,7 +213,7 @@ jobs:
         run: ./scripts/build-macos.sh
 
       - name: Upload macOS release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-macos
           path: |
@@ -231,7 +231,7 @@ jobs:
 
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: downloaded-artifacts
 

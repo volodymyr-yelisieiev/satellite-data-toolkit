@@ -200,8 +200,8 @@ For production:
 
 1. Choose the exact EUMDAC release and source.
 2. Record version, checksum, source URL, and license.
-3. Place platform binaries under `src-tauri/binaries/`.
-4. Add the sidecar to `src-tauri/tauri.conf.json > bundle.externalBin`.
+3. Place platform binaries under `src-tauri/binaries/` using Tauri's target-triple naming, for example `src-tauri/binaries/eumdac-aarch64-apple-darwin` or `src-tauri/binaries/eumdac-x86_64-pc-windows-msvc.exe`.
+4. Add the base sidecar path to `src-tauri/tauri.conf.json > bundle.externalBin`, for example `"binaries/eumdac"`.
 5. Sign/notarize the sidecar with the app.
 6. Validate auth flow with real `eumetsat_consumer_key` and `eumetsat_consumer_secret`.
 7. Validate these CLI shapes against the bundled EUMDAC version:
@@ -213,6 +213,24 @@ eumdac download -c <collection> -p <product> -o <output_dir>
 ```
 
 Important: the app reads both EUMETSAT keychain slots and syncs them to EUMDAC immediately before search/download using an app-scoped EUMDAC config environment. Confirm this behavior against the exact sidecar binary. Keep secrets out of logs and review whether EUMDAC persists credentials in any sidecar-managed config file.
+
+Sidecar checksum trust is enforced by a manifest placed next to the packaged executable:
+
+```json
+{
+  "binaries": [
+    {
+      "name": "eumdac",
+      "sha256": "<platform-binary-sha256>",
+      "version": "3.x.y",
+      "source": "https://pypi.org/project/eumdac/",
+      "license": "<license>"
+    }
+  ]
+}
+```
+
+Use `eumdac.exe` as the `name` on Windows when that is the packaged file name. Search/download commands reject an unmanifested or checksum-mismatched sidecar. Local development can bypass that gate only with `SATELLITE_ALLOW_UNVERIFIED_EUMDAC=1`.
 
 ## Artifact Handoff
 

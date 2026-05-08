@@ -14,6 +14,7 @@ use satellite_core::{
     PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest, PvWattsResult,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
@@ -21,6 +22,8 @@ const KEYCHAIN_SERVICE: &str = "Satellite Data Toolkit";
 const MAX_DATASET_RECORDS: usize = 120_000;
 const MAX_DATASET_JSON_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SAVED_NAME_LEN: usize = 160;
+const EUMDAC_SIDECAR_NAMES: &[&str] = &["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"];
+const EUMDAC_MANIFEST_NAMES: &[&str] = &["eumdac-sidecar-manifest.json", "eumdac-sidecars.json"];
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +90,42 @@ struct DownloadResult {
     output_dir: String,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarStatus {
+    found: bool,
+    trusted: bool,
+    path: Option<String>,
+    file_name: Option<String>,
+    sha256: Option<String>,
+    manifest_path: Option<String>,
+    version: Option<String>,
+    source: Option<String>,
+    license: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarManifest {
+    #[serde(default)]
+    binaries: Vec<EumdacSidecarManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EumdacSidecarManifestEntry {
+    #[serde(alias = "fileName")]
+    name: String,
+    sha256: String,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    license: Option<String>,
 }
 
 #[tauri::command]
@@ -304,13 +343,18 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
 
 #[tauri::command]
 fn check_eumdac_sidecar() -> Result<bool, String> {
-    Ok(find_eumdac_sidecar()?.is_some())
+    let status = eumdac_sidecar_status()?;
+    Ok(status.trusted || (status.found && allow_unverified_eumdac_sidecar()))
+}
+
+#[tauri::command]
+fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status()
 }
 
 #[tauri::command]
 fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
-    let sidecar =
-        find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
+    let sidecar = trusted_eumdac_sidecar()?;
     validate_eumetsat_query(&query)?;
     sync_eumdac_credentials(&app, &sidecar)?;
     let limit = query.limit.clamp(1, 100).to_string();
@@ -351,8 +395,7 @@ fn download_eumetsat_product(
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
-    let sidecar =
-        find_eumdac_sidecar()?.ok_or_else(|| "EUMDAC sidecar is not bundled".to_string())?;
+    let sidecar = trusted_eumdac_sidecar()?;
     sync_eumdac_credentials(&app, &sidecar)?;
     let clean_collection_id = collection_id.trim().to_string();
     let clean_product_id = product_id.trim().to_string();
@@ -655,7 +698,7 @@ fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
     let Some(dir) = exe.parent() else {
         return Ok(None);
     };
-    Ok(["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"]
+    Ok(EUMDAC_SIDECAR_NAMES
         .iter()
         .map(|name| dir.join(name))
         .find(|path| is_executable_candidate(path)))
@@ -663,6 +706,143 @@ fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
 
 fn is_executable_candidate(path: &Path) -> bool {
     path.exists() && path.is_file()
+}
+
+fn trusted_eumdac_sidecar() -> Result<PathBuf, String> {
+    let status = eumdac_sidecar_status()?;
+    let Some(path) = status.path.as_deref().map(PathBuf::from) else {
+        return Err(status.message);
+    };
+    if status.trusted || allow_unverified_eumdac_sidecar() {
+        Ok(path)
+    } else {
+        Err(status.message)
+    }
+}
+
+fn allow_unverified_eumdac_sidecar() -> bool {
+    std::env::var("SATELLITE_ALLOW_UNVERIFIED_EUMDAC")
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
+    match find_eumdac_sidecar()? {
+        Some(path) => eumdac_sidecar_status_for_path(path),
+        None => Ok(EumdacSidecarStatus {
+            found: false,
+            trusted: false,
+            path: None,
+            file_name: None,
+            sha256: None,
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is not bundled".to_string(),
+        }),
+    }
+}
+
+fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, String> {
+    let sha256 = sha256_file(&path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("eumdac")
+        .to_string();
+    let manifest_path = path.parent().and_then(|dir| {
+        EUMDAC_MANIFEST_NAMES
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| candidate.exists() && candidate.is_file())
+    });
+    let Some(manifest_path) = manifest_path else {
+        return Ok(EumdacSidecarStatus {
+            found: true,
+            trusted: false,
+            path: Some(path.to_string_lossy().to_string()),
+            file_name: Some(file_name),
+            sha256: Some(sha256),
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is present but checksum manifest is missing".to_string(),
+        });
+    };
+    let manifest_path_string = manifest_path.to_string_lossy().to_string();
+    let manifest = match read_eumdac_sidecar_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return Ok(EumdacSidecarStatus {
+                found: true,
+                trusted: false,
+                path: Some(path.to_string_lossy().to_string()),
+                file_name: Some(file_name),
+                sha256: Some(sha256),
+                manifest_path: Some(manifest_path_string),
+                version: None,
+                source: None,
+                license: None,
+                message: error,
+            })
+        }
+    };
+    let Some(entry) = manifest
+        .binaries
+        .iter()
+        .find(|entry| entry.name == file_name)
+    else {
+        return Ok(EumdacSidecarStatus {
+            found: true,
+            trusted: false,
+            path: Some(path.to_string_lossy().to_string()),
+            file_name: Some(file_name.clone()),
+            sha256: Some(sha256),
+            manifest_path: Some(manifest_path_string),
+            version: None,
+            source: None,
+            license: None,
+            message: format!("EUMDAC sidecar manifest has no entry for {file_name}"),
+        });
+    };
+    let expected_sha256 = normalized_sha256(&entry.sha256);
+    let trusted = expected_sha256 == sha256;
+    Ok(EumdacSidecarStatus {
+        found: true,
+        trusted,
+        path: Some(path.to_string_lossy().to_string()),
+        file_name: Some(file_name),
+        sha256: Some(sha256),
+        manifest_path: Some(manifest_path_string),
+        version: entry.version.clone(),
+        source: entry.source.clone(),
+        license: entry.license.clone(),
+        message: if trusted {
+            "EUMDAC sidecar checksum matches manifest".to_string()
+        } else {
+            "EUMDAC sidecar checksum does not match manifest".to_string()
+        },
+    })
+}
+
+fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, String> {
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&content).map_err(|error| format!("invalid EUMDAC manifest: {error}"))
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn normalized_sha256(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
@@ -797,6 +977,7 @@ pub fn run() {
             delete_api_key,
             test_api_key,
             check_eumdac_sidecar,
+            get_eumdac_sidecar_status,
             fetch_eumetsat_products,
             download_eumetsat_product
         ])
@@ -875,5 +1056,68 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn trusts_eumdac_sidecar_when_manifest_checksum_matches() {
+        let dir = temp_dir_path("trusted_eumdac");
+        fs::create_dir_all(&dir).unwrap();
+        let sidecar = dir.join("eumdac");
+        fs::write(&sidecar, b"fake eumdac binary").unwrap();
+        let sha256 = sha256_file(&sidecar).unwrap();
+        fs::write(
+            dir.join("eumdac-sidecar-manifest.json"),
+            format!(
+                r#"{{
+                  "binaries": [{{
+                    "name": "eumdac",
+                    "sha256": "{sha256}",
+                    "version": "3.0.0",
+                    "source": "https://example.invalid/eumdac",
+                    "license": "Apache-2.0"
+                  }}]
+                }}"#
+            ),
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path(sidecar).unwrap();
+        assert!(status.found);
+        assert!(status.trusted);
+        assert_eq!(status.version.as_deref(), Some("3.0.0"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rejects_eumdac_sidecar_when_manifest_checksum_mismatches() {
+        let dir = temp_dir_path("untrusted_eumdac");
+        fs::create_dir_all(&dir).unwrap();
+        let sidecar = dir.join("eumdac");
+        fs::write(&sidecar, b"fake eumdac binary").unwrap();
+        fs::write(
+            dir.join("eumdac-sidecar-manifest.json"),
+            r#"{"binaries":[{"name":"eumdac","sha256":"0000"}]}"#,
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path(sidecar).unwrap();
+        assert!(status.found);
+        assert!(!status.trusted);
+        assert!(status.message.contains("does not match"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn temp_dir_path(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "satellite_data_toolkit_{name}_{}_{}",
+            std::process::id(),
+            nanos
+        ))
     }
 }

@@ -42,6 +42,7 @@ import type {
   CredentialTestResult,
   EumetsatProduct,
   EumetsatQuery,
+  EumdacSidecarStatus,
   NdviJob,
   NdviResult,
   PowerDataset,
@@ -697,7 +698,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
     endTime: "2024-11-10T09:00:00",
     limit: 20,
   });
-  const [sidecarAvailable, setSidecarAvailable] = useState<boolean | null>(null);
+  const [sidecarStatus, setSidecarStatus] = useState<EumdacSidecarStatus | null>(null);
   const [products, setProducts] = useState<EumetsatProduct[]>([]);
   const [outputDir, setOutputDir] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -707,9 +708,9 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
   }
 
   async function checkSidecar() {
-    const available = await invoke<boolean>("check_eumdac_sidecar");
-    setSidecarAvailable(available);
-    addLog(available ? "EUMDAC sidecar is available" : "EUMDAC sidecar is not bundled yet");
+    const status = await invoke<EumdacSidecarStatus>("get_eumdac_sidecar_status");
+    setSidecarStatus(status);
+    addLog(status.message);
   }
 
   async function searchProducts() {
@@ -779,8 +780,18 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
             <Search size={18} />
             Search Products
           </button>
-          {sidecarAvailable !== null && <span className={sidecarAvailable ? "status-badge success" : "status-badge error"}>{sidecarAvailable ? "Available" : "Missing"}</span>}
+          {sidecarStatus !== null && (
+            <span className={sidecarStatus.trusted ? "status-badge success" : "status-badge error"}>
+              {sidecarStatus.trusted ? "Trusted" : sidecarStatus.found ? "Untrusted" : "Missing"}
+            </span>
+          )}
         </div>
+        {sidecarStatus !== null && (
+          <p className={sidecarStatus.trusted ? "muted-result success-text" : "muted-result danger-text"}>
+            {sidecarStatus.message}
+            {sidecarStatus.sha256 ? ` SHA256 ${sidecarStatus.sha256.slice(0, 12)}...` : ""}
+          </p>
+        )}
       </div>
       <div className="card table-card">
         <table>

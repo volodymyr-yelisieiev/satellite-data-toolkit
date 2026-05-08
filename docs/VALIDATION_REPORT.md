@@ -16,7 +16,7 @@ Additional changes validated locally:
 - CI now verifies Ubuntu, macOS, and Windows runners.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions and emit checksums.
-- EUMETSAT sidecar calls now sync keychain credentials into EUMDAC before search/download and redact secret values from process errors.
+- EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
 
 Local commands run successfully on May 8, 2026:
@@ -48,7 +48,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
 Observed DMG SHA256:
 
 ```text
-a52909593ccfa9d7f10538d41efab9c780c22f0d51d51471a95a00cb4984639c
+7c8b35f0501c8398f4ccf1b5d92b05cbc7307df57e2dcfa5f4d3cfbc109f5a61
 ```
 
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
@@ -67,7 +67,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
-| EUMETSAT | Partial | Sidecar command wiring exists, but no EUMDAC sidecar/credentials were available for live QA. |
+| EUMETSAT | Partial | Sidecar command wiring and checksum-manifest trust gate exist, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags and `GDAL_NODATA` metadata are preserved in the pure-Rust path. |
 
@@ -77,7 +77,7 @@ Five validation passes were run in parallel before final fixes:
 
 - macOS packaging: verified local `.app`/DMG path, ad-hoc signature, DMG structure, and public-release signing gaps.
 - Windows packaging: confirmed MSI/NSIS config and listed required Windows 10/11 verification steps.
-- Security/reproducibility: confirmed CSP/env/keychain baseline, added RustSec audit gates, and flagged remaining sidecar trust hardening.
+- Security/reproducibility: confirmed CSP/env/keychain baseline, added RustSec audit gates, and added EUMDAC sidecar checksum-manifest trust hardening.
 - Product/API: confirmed NASA/local PV/saved-data/API-slot base and flagged EUMDAC CLI shape, PVWatts validation, and NDVI real-world fixture QA gaps.
 - Docs/handoff: flagged README/PACKAGING as too thin and required explicit credentials, storage, release gaps, and ZIP contents.
 

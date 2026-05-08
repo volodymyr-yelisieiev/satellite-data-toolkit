@@ -4,6 +4,7 @@ import type {
   DownloadResult,
   EumetsatQuery,
   ExportResult,
+  EumdacSidecarStatus,
   NdviJob,
   NdviResult,
   PowerDataset,
@@ -155,6 +156,20 @@ async function demoInvoke<T>(command: string, args?: Record<string, unknown>): P
   }
   if (command === "check_eumdac_sidecar") {
     return false as T;
+  }
+  if (command === "get_eumdac_sidecar_status") {
+    return {
+      found: false,
+      trusted: false,
+      path: null,
+      fileName: null,
+      sha256: null,
+      manifestPath: null,
+      version: null,
+      source: null,
+      license: null,
+      message: "EUMDAC sidecar is not bundled in browser demo mode.",
+    } satisfies EumdacSidecarStatus as T;
   }
   if (command === "fetch_eumetsat_products") {
     const query = args?.query as EumetsatQuery;

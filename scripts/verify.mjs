@@ -7,8 +7,6 @@ if (!isWindows) {
   env.PATH = `/opt/homebrew/opt/rustup/bin:${env.PATH ?? ""}`;
 }
 
-const executable = (command) => (isWindows && command === "npm" ? "npm.cmd" : command);
-
 const commands = [
   ["npm", ["run", "typecheck"]],
   ["npm", ["run", "test"]],
@@ -22,9 +20,9 @@ const commands = [
 
 for (const [command, args] of commands) {
   console.log(`\n> ${command} ${args.join(" ")}`);
-  const result = spawnSync(executable(command), args, {
+  const result = spawnSync(command, args, {
     env,
-    shell: false,
+    shell: isWindows,
     stdio: "inherit",
   });
 

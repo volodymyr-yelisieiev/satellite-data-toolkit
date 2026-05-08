@@ -216,7 +216,7 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: configured but not verified. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## GitHub CI/CD
 

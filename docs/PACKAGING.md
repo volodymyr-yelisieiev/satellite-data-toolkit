@@ -112,7 +112,7 @@ spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
 8. Test first launch from a clean user profile with no internet.
-9. Test NASA fetch, save, export, API slots, PV local estimate, and an NDVI GeoTIFF sample with CRS/geotransform tags plus `GDAL_NODATA`.
+9. Test NASA fetch, save, export, API slots, PV local estimate, and NDVI GeoTIFF samples with CRS/geotransform tags, `GDAL_NODATA`, and compressed TIFF input.
 10. Test app data removal and uninstall behavior.
 
 Known current macOS public-release gaps:
@@ -175,7 +175,7 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: build configured with CI artifacts; native install/uninstall QA is still required.
+Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts; native install/uninstall, Authenticode, and SmartScreen QA are still required on Windows 10/11.
 
 ## GitHub Release Workflow
 

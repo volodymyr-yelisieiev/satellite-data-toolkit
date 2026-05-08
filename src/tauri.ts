@@ -127,12 +127,12 @@ async function demoInvoke<T>(command: string, args?: Record<string, unknown>): P
       min: -0.1,
       max: 0.7,
       mean: 0.35,
-      georeferencingPreserved: false,
-      warnings: ["Demo NDVI response."],
+      georeferencingPreserved: true,
+      warnings: ["Demo NDVI response with preserved GeoTIFF metadata."],
     } satisfies NdviResult as T;
   }
   if (command === "validate_ndvi_inputs") {
-    return "NDVI job is structurally valid." as T;
+    return "NDVI job is structurally valid. Pure-Rust TIFF execution preserves common GeoTIFF CRS/geotransform tags when they are present on the Red band input." as T;
   }
   if (command === "store_api_key") {
     demoApiSlots.add(String(args?.name));

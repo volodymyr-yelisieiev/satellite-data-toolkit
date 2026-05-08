@@ -51,7 +51,7 @@ Observed DMG SHA256:
 78f070dce48f11adc10bc44706bfb3cf0a4ba05595560aee76bf5d70d04c7a65
 ```
 
-Browser visual smoke screenshots were captured for `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows.
+Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
 
 Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 
@@ -64,7 +64,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | Windows packaging | Configured, not verified | MSI/NSIS targets and script exist, but no Windows VM/runner was available in this workspace. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
-| UI visual smoke | Pass with caveat | Key screens rendered at target widths with no persistent clipped text/controls detected. |
+| UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
 | EUMETSAT | Partial | Sidecar command wiring exists, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags and `GDAL_NODATA` metadata are preserved in the pure-Rust path. |

@@ -262,7 +262,6 @@ It intentionally excludes heavy/generated/local files:
 - Live EUMETSAT auth/search/download QA with real credentials and the exact bundled sidecar.
 - Live PVWatts/NLR QA with real API key.
 - Broader NDVI QA with real-world tiled/compressed/multi-provider GeoTIFF fixtures.
-- Full UI visual regression automation across 1024, 1280, and 1440 widths.
 
 ## Troubleshooting
 

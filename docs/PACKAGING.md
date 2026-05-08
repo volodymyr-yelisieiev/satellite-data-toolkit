@@ -37,6 +37,7 @@ Run:
 ```bash
 ./scripts/verify.sh
 ./scripts/audit-rust.sh
+npm run visual:smoke
 ```
 
 This fails fast if Node, npm, or Cargo is unavailable, then runs:
@@ -59,6 +60,8 @@ cargo install cargo-audit --locked --version 0.22.1
 ```
 
 The GitHub RustSec audit workflow and release workflow gate install `cargo-audit` 0.22.1 and run the same script. The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
+
+`npm run visual:smoke` builds the app, starts `vite preview`, and captures the `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` screens at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. CI uploads those screenshots as the `visual-smoke` artifact.
 
 ## macOS Local Review Build
 

@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Require public release signing secrets
         shell: bash
         env:
@@ -36,41 +39,7 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-        run: |
-          set -euo pipefail
-
-          missing=()
-          require_secret() {
-            local name="$1"
-            if [[ -z "${!name:-}" ]]; then
-              missing+=("$name")
-            fi
-          }
-
-          require_secret WINDOWS_SIGN_COMMAND
-          require_secret APPLE_CERTIFICATE
-          require_secret APPLE_CERTIFICATE_PASSWORD
-          require_secret KEYCHAIN_PASSWORD
-
-          has_apple_id_notary=false
-          if [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
-            has_apple_id_notary=true
-          fi
-
-          has_api_key_notary=false
-          if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_P8_BASE64:-}" ]]; then
-            has_api_key_notary=true
-          fi
-
-          if [[ "$has_apple_id_notary" != "true" && "$has_api_key_notary" != "true" ]]; then
-            missing+=("APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID or APPLE_API_KEY/APPLE_API_ISSUER/APPLE_API_KEY_P8_BASE64")
-          fi
-
-          if (( ${#missing[@]} > 0 )); then
-            echo "Refusing to publish a public release without production signing/notarization secrets." >&2
-            printf 'Missing: %s\n' "${missing[@]}" >&2
-            exit 1
-          fi
+        run: bash ./scripts/check-release-secrets.sh
 
   rust-audit:
     name: RustSec audit

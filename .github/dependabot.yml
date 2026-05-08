@@ -43,7 +43,23 @@ updates:
       prefix: "deps"
       include: "scope"
     groups:
-      rust-runtime:
+      tauri-runtime:
+        patterns:
+          - "tauri"
+          - "tauri-*"
+          - "wry"
+          - "tao"
+          - "muda"
+          - "gtk*"
+          - "glib*"
+          - "gdk*"
+          - "gio"
+          - "webkit2gtk*"
+          - "javascriptcore-rs"
+          - "soup3"
+      rust-patch:
+        update-types:
+          - "patch"
         patterns:
           - "*"
 
@@ -65,3 +81,5 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"

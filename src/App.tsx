@@ -115,6 +115,12 @@ function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   const tableColumns = useMemo(() => dataset?.request.parameters ?? request.parameters, [dataset, request.parameters]);
+  const shellStatus = useMemo(() => {
+    if (loading) return { label: "Fetching", tone: "busy" };
+    if (status === "error") return { label: "Needs attention", tone: "error" };
+    if (status === "success") return { label: "Data ready", tone: "success" };
+    return { label: "Ready", tone: "success" };
+  }, [loading, status]);
 
   useEffect(() => {
     void refreshApiStatus();
@@ -305,9 +311,9 @@ function App() {
           })}
         </nav>
 
-        <div className="status-line">
+        <div className={`status-line ${shellStatus.tone}`}>
           <span className="pulse" />
-          <span>Ready</span>
+          <span>{shellStatus.label}</span>
         </div>
       </aside>
 

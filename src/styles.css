@@ -172,12 +172,30 @@ button:disabled {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.status-line.busy {
+  color: #d8e9ff;
+}
+
+.status-line.error {
+  color: #ffd1d1;
+}
+
 .pulse {
   width: 14px;
   height: 14px;
   background: var(--green);
   border-radius: 50%;
   box-shadow: 0 0 18px rgba(44, 200, 111, 0.8);
+}
+
+.status-line.busy .pulse {
+  background: var(--yellow);
+  box-shadow: 0 0 18px rgba(231, 185, 78, 0.68);
+}
+
+.status-line.error .pulse {
+  background: var(--danger);
+  box-shadow: 0 0 18px rgba(255, 93, 93, 0.7);
 }
 
 .workspace {

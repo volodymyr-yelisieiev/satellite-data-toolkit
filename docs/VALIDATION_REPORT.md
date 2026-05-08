@@ -14,6 +14,7 @@ Additional changes validated locally:
 - Frontend unit tests added with Vitest for shared UI/domain helpers.
 - `./scripts/verify.sh` now runs version consistency checks, Tauri API surface checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
 - CI now verifies Ubuntu, macOS, and Windows runners.
+- A manual `macOS package` workflow now builds and uploads private-review DMG/checksum artifacts with the same local macOS packaging script.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
 - Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
 - Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, weekly Dependabot update configuration for npm, Cargo, and GitHub Actions, enabled GitHub Dependabot vulnerability alerts/automated security fixes, and `main` branch protection with required CI checks.

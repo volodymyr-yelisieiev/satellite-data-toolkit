@@ -6,7 +6,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 ## Reviewer Snapshot
 
-- Current package status: macOS and Windows packaging scripts are configured with checksums; Windows MSI/NSIS CI packaging has been verified, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
+- Current package status: macOS and Windows packaging scripts are configured with checksums; manual macOS DMG and Windows MSI/NSIS CI packaging workflows are configured, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
 - Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, Dependabot monitors npm, Cargo, and GitHub Actions dependencies, and `main` is protected by required CI checks.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
@@ -16,7 +16,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| macOS app/DMG | Partial release-ready | Builds locally and is ad-hoc signed. Public distribution still needs Developer ID, hardened runtime, notarization, `spctl`, and `stapler` checks. |
+| macOS app/DMG | Partial release-ready | Builds locally and through manual CI packaging with ad-hoc signing. Public distribution still needs Developer ID, hardened runtime, notarization, `spctl`, and `stapler` checks. |
 | Windows MSI/NSIS | Configured with CI build | Tauri config and PowerShell build script produce MSI/NSIS and checksums. Needs Windows 10/11 install/uninstall QA. |
 | NASA POWER | Implemented | Uses JSON API, normalizes daily/hourly records, preserves units metadata, handles fill values. NASA POWER does not need an API key. |
 | Saved Data | Implemented | Saves datasets to SQLite, supports preview, delete, and CSV/JSON export. |
@@ -202,6 +202,8 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
+The manual `macOS package` workflow runs the same script on `macos-latest` and uploads the DMG plus checksum for private review builds.
+
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
 ## Build Windows
@@ -224,7 +226,7 @@ Current status: MSI/NSIS packaging is configured and has produced CI artifacts w
 
 ## GitHub CI/CD
 
-The default CI workflow runs local verification on Ubuntu, macOS, and Windows. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Manual package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
 
 ```text
 macOS DMG

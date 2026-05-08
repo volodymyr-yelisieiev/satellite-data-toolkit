@@ -79,8 +79,17 @@ function Invoke-MsiExecChecked {
   )
 
   Write-Host "> msiexec.exe $($Arguments -join ' ')"
-  & msiexec.exe @Arguments
-  $exitCode = $LASTEXITCODE
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = "msiexec.exe"
+  $startInfo.UseShellExecute = $false
+  foreach ($argument in $Arguments) {
+    $startInfo.ArgumentList.Add($argument)
+  }
+
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  $process.WaitForExit()
+  $exitCode = $process.ExitCode
+
   if (($exitCode -ne 0) -and ($exitCode -ne 3010)) {
     throw "$Description failed with exit code $exitCode"
   }

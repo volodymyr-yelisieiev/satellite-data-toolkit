@@ -85,10 +85,15 @@ jobs:
       - name: Run visual smoke
         run: npm run visual:smoke
 
+      - name: Run browser workflow smoke
+        run: npm run workflow:smoke
+
       - name: Upload visual smoke screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: visual-smoke
-          path: output/visual-smoke/
+          path: |
+            output/visual-smoke/
+            output/workflow-smoke/
           if-no-files-found: ignore

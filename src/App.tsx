@@ -83,6 +83,7 @@ const powerTabs = [
   { id: "ndvi" as Screen, title: "NDVI CALCULATOR", icon: Leaf },
   { id: "pv" as Screen, title: "PV ESTIMATE", icon: BarChart3 },
 ];
+const workflowScreensWithActivity = new Set<Screen>(["power", "eumetsat", "ndvi", "pv", "saved", "api"]);
 
 function screenFromHash(): Screen {
   if (typeof window === "undefined") return "power";
@@ -115,6 +116,7 @@ function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   const tableColumns = useMemo(() => dataset?.request.parameters ?? request.parameters, [dataset, request.parameters]);
+  const showActivityLog = workflowScreensWithActivity.has(active);
 
   useEffect(() => {
     void refreshApiStatus();
@@ -140,6 +142,10 @@ function App() {
 
   function addLog(message: string) {
     setLogs((current) => [...current.slice(-80), { time: timestamp(), message }]);
+  }
+
+  function clearLogs() {
+    setLogs([{ time: timestamp(), message: "Activity log cleared" }]);
   }
 
   async function refreshSavedCount() {
@@ -340,7 +346,6 @@ function App() {
               loading={loading}
               status={status}
               error={error}
-              logs={logs}
               previewLimit={previewLimit}
               lastExportPath={lastExportPath}
               updateRequest={updateRequest}
@@ -358,7 +363,6 @@ function App() {
               onExport={handleExport}
               onSave={handleSave}
               onPreviewMore={() => setPreviewLimit((current) => current + 24)}
-              onClearLogs={() => setLogs([{ time: timestamp(), message: "Activity log cleared" }])}
             />
           )}
           {active === "eumetsat" && <EumetsatScreen addLog={addLog} />}
@@ -397,6 +401,7 @@ function App() {
           {active === "api" && <ApiScreen apiStatus={apiStatus} refreshApiStatus={refreshApiStatus} addLog={addLog} />}
           {active === "settings" && <SettingsScreen />}
           {active === "about" && <AboutScreen />}
+          {showActivityLog && <ActivityLog logs={logs} onClear={clearLogs} />}
         </div>
 
         <footer className="footer">
@@ -425,7 +430,6 @@ function PowerScreen(props: {
   loading: boolean;
   status: "idle" | "success" | "error";
   error: string;
-  logs: ActivityLogEntry[];
   previewLimit: number;
   lastExportPath: string;
   updateRequest: <K extends keyof PowerRequest>(key: K, value: PowerRequest[K]) => void;
@@ -436,7 +440,6 @@ function PowerScreen(props: {
   onExport: (format: "csv" | "json") => void;
   onSave: () => void;
   onPreviewMore: () => void;
-  onClearLogs: () => void;
 }) {
   const visibleRecords = props.dataset?.records.slice(0, props.previewLimit) ?? [];
   return (
@@ -621,8 +624,6 @@ function PowerScreen(props: {
           {props.lastExportPath && <p className="muted-result">Last export: {props.lastExportPath}</p>}
         </div>
       </section>
-
-      <ActivityLog logs={props.logs} onClear={props.onClearLogs} />
     </>
   );
 }
@@ -1169,6 +1170,11 @@ function ApiScreen({
     try {
       await invoke<void>("store_api_key", { name, value: values[name] ?? "" });
       setValues((current) => ({ ...current, [name]: "" }));
+      setTests((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
       await refreshApiStatus();
       addLog(`API slot stored: ${name}`);
     } catch (err) {
@@ -1179,6 +1185,11 @@ function ApiScreen({
   async function deleteKey(name: string) {
     try {
       await invoke<void>("delete_api_key", { name });
+      setTests((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
       await refreshApiStatus();
       addLog(`API slot deleted: ${name}`);
     } catch (err) {

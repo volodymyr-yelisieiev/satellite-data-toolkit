@@ -16,6 +16,7 @@
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
     "visual:smoke": "node scripts/visual-smoke.mjs",
+    "workflow:smoke": "node scripts/workflow-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "verify": "node scripts/verify.mjs",
     "tauri": "tauri",

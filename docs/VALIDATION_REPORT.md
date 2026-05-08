@@ -48,12 +48,12 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
 Observed DMG SHA256:
 
 ```text
-7c8b35f0501c8398f4ccf1b5d92b05cbc7307df57e2dcfa5f4d3cfbc109f5a61
+12e3277c03c0eca12a9f20f5a2914750cfab077611a8bbc0e63a97bb186d58e9
 ```
 
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
 
-Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25562971902` passed and uploaded `windows-msi`, `windows-nsis`, and `windows-sha256sums` artifacts.
+Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25565037772` passed on `652a42a` and uploaded `windows-msi` (6,886,172 bytes), `windows-nsis` (5,485,452 bytes), and `windows-sha256sums` (296 bytes) artifacts after the unified full verify preflight.
 
 Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags and Deflate-compressed TIFF inputs: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 

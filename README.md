@@ -7,7 +7,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 ## Reviewer Snapshot
 
 - Current package status: macOS and Windows packaging scripts are configured with checksums; Windows MSI/NSIS CI packaging has been verified, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
-- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, and Dependabot monitors npm, Cargo, and GitHub Actions dependencies.
+- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, Dependabot monitors npm, Cargo, and GitHub Actions dependencies, and `main` is protected by required CI checks.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
 - Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
@@ -238,6 +238,8 @@ and uploads those assets to the matching GitHub release.
 Dependabot is configured in `.github/dependabot.yml` for weekly npm, Cargo, and GitHub Actions update pull requests, with related dependency families grouped to keep maintenance reviewable. Dependabot vulnerability alerts and automated security fixes are enabled for the GitHub repository.
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
+
+The `main` branch is protected with up-to-date required checks for RustSec audit, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
 
 Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
 

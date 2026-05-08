@@ -49,10 +49,12 @@ export const initialRequest: PowerRequest = {
 };
 
 export const previewRowOptions = [12, 24, 48] as const;
+export const requestTimeoutOptions = [30, 60, 120] as const;
 
 export const defaultAppSettings: AppSettings = {
   startupScreen: "dashboard",
   previewRows: 12,
+  requestTimeoutSeconds: 60,
 };
 
 export function normalizeAppSettings(value: unknown): AppSettings {
@@ -64,8 +66,12 @@ export function normalizeAppSettings(value: unknown): AppSettings {
   const startupScreen = typeof candidate.startupScreen === "string" && validScreens.includes(candidate.startupScreen as Screen)
     ? candidate.startupScreen
     : defaultAppSettings.startupScreen;
+  const parsedRequestTimeout = Number(candidate.requestTimeoutSeconds);
+  const requestTimeoutSeconds = requestTimeoutOptions.includes(parsedRequestTimeout as (typeof requestTimeoutOptions)[number])
+    ? parsedRequestTimeout
+    : defaultAppSettings.requestTimeoutSeconds;
 
-  return { startupScreen, previewRows };
+  return { startupScreen, previewRows, requestTimeoutSeconds };
 }
 
 export function timestamp() {

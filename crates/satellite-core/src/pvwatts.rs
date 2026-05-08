@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+use crate::{normalize_http_timeout_seconds, DEFAULT_HTTP_TIMEOUT_SECONDS};
+
 const PVWATTS_ENDPOINT: &str = "https://developer.nlr.gov/api/pvwatts/v8.json";
 
 #[derive(Debug, Error)]
@@ -32,6 +34,8 @@ pub enum PvWattsError {
     ApiStatus { status: u16, body: String },
     #[error("PVWatts reported errors: {0}")]
     ApiErrors(String),
+    #[error("request timed out after {seconds} seconds")]
+    Timeout { seconds: u64 },
     #[error("failed to build PVWatts URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("request failed: {0}")]
@@ -88,15 +92,32 @@ pub async fn estimate_pvwatts(
     request: PvWattsRequest,
     api_key: &str,
 ) -> Result<PvWattsResult, PvWattsError> {
+    estimate_pvwatts_with_timeout(request, api_key, DEFAULT_HTTP_TIMEOUT_SECONDS).await
+}
+
+pub async fn estimate_pvwatts_with_timeout(
+    request: PvWattsRequest,
+    api_key: &str,
+    timeout_seconds: u64,
+) -> Result<PvWattsResult, PvWattsError> {
     validate_request(&request)?;
     if api_key.trim().is_empty() {
         return Err(PvWattsError::MissingApiKey);
     }
     let url = build_url(&request, api_key)?;
+    let timeout_seconds = normalize_http_timeout_seconds(timeout_seconds);
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(timeout_seconds))
         .build()?;
-    let response = client.get(url).send().await?;
+    let response = client.get(url).send().await.map_err(|error| {
+        if error.is_timeout() {
+            PvWattsError::Timeout {
+                seconds: timeout_seconds,
+            }
+        } else {
+            PvWattsError::Request(error)
+        }
+    })?;
     let status = response.status();
     if !status.is_success() {
         return Err(PvWattsError::ApiStatus {

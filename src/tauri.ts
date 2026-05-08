@@ -203,16 +203,16 @@ export function invoke<T>(command: string, args?: Record<string, unknown>): Prom
   return demoInvoke<T>(command, args);
 }
 
-export async function fetchPowerDataset(request: PowerRequest): Promise<PowerDataset> {
-  return invoke<PowerDataset>("fetch_power_dataset", { request });
+export async function fetchPowerDataset(request: PowerRequest, timeoutSeconds?: number): Promise<PowerDataset> {
+  return invoke<PowerDataset>("fetch_power_dataset", { request, timeoutSeconds });
 }
 
 export async function estimatePv(input: PvEstimateInput): Promise<PvEstimate> {
   return invoke<PvEstimate>("estimate_pv", { input });
 }
 
-export async function estimatePvWatts(request: PvWattsRequest): Promise<PvWattsResult> {
-  return invoke<PvWattsResult>("estimate_pvwatts", { request });
+export async function estimatePvWatts(request: PvWattsRequest, timeoutSeconds?: number): Promise<PvWattsResult> {
+  return invoke<PvWattsResult>("estimate_pvwatts", { request, timeoutSeconds });
 }
 
 export async function saveDataset(name: string, dataset: PowerDataset): Promise<SavedDataset> {

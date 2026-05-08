@@ -37,6 +37,7 @@ import {
   normalizeAppSettings,
   previewRowOptions,
   quickExamples,
+  requestTimeoutOptions,
   timestamp,
   toFiniteNumber,
 } from "./domain";
@@ -217,7 +218,7 @@ function App() {
     setPreviewLimit(settings.previewRows);
     addLog("Sending request to NASA POWER API...");
     try {
-      const response = await fetchPowerDataset(request);
+      const response = await fetchPowerDataset(request, settings.requestTimeoutSeconds);
       setDataset(response);
       setStatus("success");
       addLog(`Response received successfully: ${response.records.length} records`);
@@ -279,17 +280,20 @@ function App() {
   async function handlePvWatts() {
     const source = dataset?.request ?? request;
     try {
-      const result = await estimatePvWatts({
-        latitude: source.latitude,
-        longitude: source.longitude,
-        systemCapacityKw: pvCapacity,
-        tiltDegrees: pvTilt,
-        azimuthDegrees: pvAzimuth,
-        lossesPercent: pvLosses,
-        moduleType: 0,
-        arrayType: 1,
-        timeframe: "monthly",
-      });
+      const result = await estimatePvWatts(
+        {
+          latitude: source.latitude,
+          longitude: source.longitude,
+          systemCapacityKw: pvCapacity,
+          tiltDegrees: pvTilt,
+          azimuthDegrees: pvAzimuth,
+          lossesPercent: pvLosses,
+          moduleType: 0,
+          arrayType: 1,
+          timeframe: "monthly",
+        },
+        settings.requestTimeoutSeconds,
+      );
       setPvWattsResult(result);
       addLog(`PVWatts/NLR estimate completed: ${result.acAnnualKwh.toFixed(2)} kWh annual AC`);
     } catch (err) {
@@ -1326,7 +1330,13 @@ function SettingsScreen({
           </label>
           <label>
             Request Timeout
-            <input value="60 seconds" readOnly />
+            <select value={settings.requestTimeoutSeconds} onChange={(event) => onChange({ requestTimeoutSeconds: toFiniteNumber(event.target.value, settings.requestTimeoutSeconds) })}>
+              {requestTimeoutOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value} seconds
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Credential Storage

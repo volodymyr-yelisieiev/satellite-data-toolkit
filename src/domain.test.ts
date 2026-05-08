@@ -27,11 +27,12 @@ describe("domain helpers", () => {
   });
 
   it("normalizes stored app settings", () => {
-    expect(normalizeAppSettings({ startupScreen: "pv", previewRows: 24 })).toEqual({
+    expect(normalizeAppSettings({ startupScreen: "pv", previewRows: 24, requestTimeoutSeconds: 120 })).toEqual({
       startupScreen: "pv",
       previewRows: 24,
+      requestTimeoutSeconds: 120,
     });
-    expect(normalizeAppSettings({ startupScreen: "missing", previewRows: 999 })).toEqual(defaultAppSettings);
+    expect(normalizeAppSettings({ startupScreen: "missing", previewRows: 999, requestTimeoutSeconds: 999 })).toEqual(defaultAppSettings);
     expect(normalizeAppSettings(null)).toEqual(defaultAppSettings);
   });
 });

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+use crate::{normalize_http_timeout_seconds, DEFAULT_HTTP_TIMEOUT_SECONDS};
+
 #[derive(Debug, Error)]
 pub enum PowerError {
     #[error("latitude must be between -90 and 90")]
@@ -24,8 +26,8 @@ pub enum PowerError {
     DateRangeTooLarge { temporal: String, max_days: i64 },
     #[error("NASA POWER response did not contain any records")]
     EmptyResponse,
-    #[error("request timed out after 60 seconds")]
-    Timeout,
+    #[error("request timed out after {seconds} seconds")]
+    Timeout { seconds: u64 },
     #[error("parameter names must be non-empty and contain only letters, numbers, underscore, dash, or slash")]
     InvalidParameterName,
     #[error("temporal must be daily or hourly")]
@@ -123,14 +125,24 @@ struct ApiTimes {
 }
 
 pub async fn fetch_power_dataset(request: PowerRequest) -> Result<PowerDataset, PowerError> {
+    fetch_power_dataset_with_timeout(request, DEFAULT_HTTP_TIMEOUT_SECONDS).await
+}
+
+pub async fn fetch_power_dataset_with_timeout(
+    request: PowerRequest,
+    timeout_seconds: u64,
+) -> Result<PowerDataset, PowerError> {
     validate_request(&request)?;
     let url = build_url(&request)?;
+    let timeout_seconds = normalize_http_timeout_seconds(timeout_seconds);
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(timeout_seconds))
         .build()?;
     let response = client.get(url).send().await.map_err(|error| {
         if error.is_timeout() {
-            PowerError::Timeout
+            PowerError::Timeout {
+                seconds: timeout_seconds,
+            }
         } else {
             PowerError::Request(error)
         }

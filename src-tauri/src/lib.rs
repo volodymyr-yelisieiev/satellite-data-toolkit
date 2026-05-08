@@ -8,10 +8,11 @@ use chrono::Utc;
 use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 use satellite_core::{
-    estimate_pv as estimate_pv_core, estimate_pvwatts as estimate_pvwatts_core,
-    fetch_power_dataset as fetch_power_dataset_core, run_ndvi as run_ndvi_core,
-    validate_ndvi_inputs as validate_ndvi_inputs_core, NdviJob, NdviResult, PowerDataset,
-    PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest, PvWattsResult,
+    estimate_pv as estimate_pv_core, estimate_pvwatts_with_timeout as estimate_pvwatts_core,
+    fetch_power_dataset_with_timeout as fetch_power_dataset_core, normalize_http_timeout_seconds,
+    run_ndvi as run_ndvi_core, validate_ndvi_inputs as validate_ndvi_inputs_core, NdviJob,
+    NdviResult, PowerDataset, PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest,
+    PvWattsResult, DEFAULT_HTTP_TIMEOUT_SECONDS,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -129,10 +130,16 @@ struct EumdacSidecarManifestEntry {
 }
 
 #[tauri::command]
-async fn fetch_power_dataset(request: PowerRequest) -> Result<PowerDataset, String> {
-    fetch_power_dataset_core(request)
-        .await
-        .map_err(|error| error.to_string())
+async fn fetch_power_dataset(
+    request: PowerRequest,
+    timeout_seconds: Option<u64>,
+) -> Result<PowerDataset, String> {
+    fetch_power_dataset_core(
+        request,
+        normalize_http_timeout_seconds(timeout_seconds.unwrap_or(DEFAULT_HTTP_TIMEOUT_SECONDS)),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -141,12 +148,19 @@ fn estimate_pv(input: PvEstimateInput) -> Result<PvEstimate, String> {
 }
 
 #[tauri::command]
-async fn estimate_pvwatts(request: PvWattsRequest) -> Result<PvWattsResult, String> {
+async fn estimate_pvwatts(
+    request: PvWattsRequest,
+    timeout_seconds: Option<u64>,
+) -> Result<PvWattsResult, String> {
     let api_key = get_api_key("nlr_pvwatts_key")?
         .ok_or_else(|| "PVWatts/NLR API key is not stored".to_string())?;
-    estimate_pvwatts_core(request, &api_key)
-        .await
-        .map_err(|error| error.to_string())
+    estimate_pvwatts_core(
+        request,
+        &api_key,
+        normalize_http_timeout_seconds(timeout_seconds.unwrap_or(DEFAULT_HTTP_TIMEOUT_SECONDS)),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -316,7 +330,7 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
             array_type: 1,
             timeframe: "monthly".to_string(),
         };
-        match estimate_pvwatts(request).await {
+        match estimate_pvwatts(request, None).await {
             Ok(_) => {
                 return Ok(CredentialTestResult {
                     slot: name,

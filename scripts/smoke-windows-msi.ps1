@@ -39,12 +39,12 @@ function Get-MsiProperty {
   $record = $view.Fetch()
 
   if ($null -eq $record) {
-    $view.Close()
+    $null = $view.Close()
     return $null
   }
 
   $value = $record.StringData(1)
-  $view.Close()
+  $null = $view.Close()
   if ($value -is [array]) {
     $value = $value[0]
   }

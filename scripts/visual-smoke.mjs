@@ -90,13 +90,51 @@ async function capturePage(browser, screen, viewport) {
   await page.locator(".app-shell").waitFor({ state: "visible", timeout: 10_000 });
   await page.waitForTimeout(150);
 
-  const metrics = await page.evaluate(() => ({
-    textLength: document.body.innerText.trim().length,
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-    activeNav: document.querySelector(".nav-item.active strong")?.textContent?.trim() ?? "",
-    heading: document.querySelector(".screen-heading h1")?.textContent?.trim() ?? "",
-  }));
+  const metrics = await page.evaluate(() => {
+    const overflowSelectors = [
+      ".nav-item",
+      ".top-tab",
+      ".doc-button",
+      ".primary-action",
+      ".secondary-action",
+      ".icon-button",
+      ".status-badge",
+      ".dashboard-tile",
+      ".api-card",
+      "input",
+      "select",
+    ];
+    const overflowIssues = Array.from(document.querySelectorAll(overflowSelectors.join(","))).flatMap((element) => {
+      if (!(element instanceof HTMLElement)) return [];
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (style.display === "none" || style.visibility === "hidden" || rect.width < 1 || rect.height < 1) return [];
+      const horizontalOverflow = element.scrollWidth > Math.ceil(element.clientWidth) + 2;
+      const verticalOverflow = element.scrollHeight > Math.ceil(element.clientHeight) + 2;
+      const text = element.innerText.trim() || element.getAttribute("placeholder") || element.getAttribute("aria-label") || element.tagName.toLowerCase();
+      const label = text.replace(/\s+/g, " ").slice(0, 80);
+      const issues = [];
+      if (horizontalOverflow || verticalOverflow) {
+        issues.push(`clipped control "${label}" (${element.scrollWidth}x${element.scrollHeight} > ${element.clientWidth}x${element.clientHeight})`);
+      }
+      const container = element.closest(".card,.content-panel,.footer,.top-tabs");
+      if (container instanceof HTMLElement) {
+        const containerRect = container.getBoundingClientRect();
+        if (rect.left < containerRect.left - 2 || rect.right > containerRect.right + 2) {
+          issues.push(`control outside container "${label}" (${Math.round(rect.left)}..${Math.round(rect.right)} outside ${Math.round(containerRect.left)}..${Math.round(containerRect.right)})`);
+        }
+      }
+      return issues;
+    });
+    return {
+      textLength: document.body.innerText.trim().length,
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      activeNav: document.querySelector(".nav-item.active strong")?.textContent?.trim() ?? "",
+      heading: document.querySelector(".screen-heading h1")?.textContent?.trim() ?? "",
+      overflowIssues: overflowIssues.slice(0, 8),
+    };
+  });
 
   const failures = [];
   if (errors.length > 0) {
@@ -111,6 +149,7 @@ async function capturePage(browser, screen, viewport) {
   if (!metrics.activeNav || !metrics.heading) {
     failures.push(`missing active navigation or screen heading (${metrics.activeNav || "no nav"} / ${metrics.heading || "no heading"})`);
   }
+  failures.push(...metrics.overflowIssues);
 
   const fileName = `${screen}-${viewport.width}x${viewport.height}.png`;
   const screenshot = await page.screenshot({

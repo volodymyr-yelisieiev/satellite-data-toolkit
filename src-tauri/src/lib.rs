@@ -870,7 +870,10 @@ fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, St
 
 fn sha256_file(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn normalized_sha256(value: &str) -> String {

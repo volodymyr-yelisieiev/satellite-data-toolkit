@@ -702,18 +702,31 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
   const [products, setProducts] = useState<EumetsatProduct[]>([]);
   const [outputDir, setOutputDir] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [busyAction, setBusyAction] = useState<"sidecar" | "search" | "download" | null>(null);
+  const isBusy = busyAction !== null;
 
   function update<K extends keyof EumetsatQuery>(key: K, value: EumetsatQuery[K]) {
     setQuery((current) => ({ ...current, [key]: value }));
   }
 
   async function checkSidecar() {
-    const status = await invoke<EumdacSidecarStatus>("get_eumdac_sidecar_status");
-    setSidecarStatus(status);
-    addLog(status.message);
+    setBusyAction("sidecar");
+    try {
+      const status = await invoke<EumdacSidecarStatus>("get_eumdac_sidecar_status");
+      setSidecarStatus(status);
+      addLog(status.message);
+    } catch (err) {
+      setSidecarStatus(null);
+      addLog(`EUMDAC sidecar check failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function searchProducts() {
+    setBusyAction("search");
+    setProducts([]);
+    setSelectedProduct("");
     try {
       const result = await invoke<{ products: EumetsatProduct[] }>("fetch_eumetsat_products", { query });
       setProducts(result.products);
@@ -721,15 +734,20 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
       addLog(`EUMETSAT search returned ${result.products.length} products`);
     } catch (err) {
       addLog(`EUMETSAT search failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
     }
   }
 
   async function downloadProduct() {
+    setBusyAction("download");
     try {
       await invoke("download_eumetsat_product", { collectionId: query.collectionId, productId: selectedProduct, outputDir });
       addLog(`EUMETSAT product download started: ${selectedProduct}`);
     } catch (err) {
       addLog(`EUMETSAT download failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -772,13 +790,13 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
         </div>
         <div className="action-row left wrap">
-          <button className="secondary-action" type="button" onClick={checkSidecar}>
-            <Satellite size={18} />
-            Check Sidecar
+          <button className="secondary-action" type="button" onClick={checkSidecar} disabled={isBusy}>
+            {busyAction === "sidecar" ? <Loader2 className="spin" size={18} /> : <Satellite size={18} />}
+            {busyAction === "sidecar" ? "Checking" : "Check Sidecar"}
           </button>
-          <button className="primary-action" type="button" onClick={searchProducts}>
-            <Search size={18} />
-            Search Products
+          <button className="primary-action" type="button" onClick={searchProducts} disabled={isBusy}>
+            {busyAction === "search" ? <Loader2 className="spin" size={18} /> : <Search size={18} />}
+            {busyAction === "search" ? "Searching" : "Search Products"}
           </button>
           {sidecarStatus !== null && (
             <span className={sidecarStatus.trusted ? "status-badge success" : "status-badge error"}>
@@ -808,7 +826,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
                 <td>{product.id}</td>
                 <td>{product.title}</td>
                 <td>
-                  <button className="secondary-action compact" type="button" onClick={() => setSelectedProduct(product.id)}>
+                  <button className="secondary-action compact" type="button" onClick={() => setSelectedProduct(product.id)} disabled={isBusy}>
                     Select
                   </button>
                 </td>
@@ -825,9 +843,9 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
         </table>
         <div className="action-row left wrap">
           <input value={selectedProduct} placeholder="Selected product id" onChange={(event) => setSelectedProduct(event.target.value)} />
-          <button className="primary-action" type="button" onClick={downloadProduct} disabled={!selectedProduct || !outputDir}>
-            <Download size={18} />
-            Download Selected
+          <button className="primary-action" type="button" onClick={downloadProduct} disabled={isBusy || !selectedProduct || !outputDir}>
+            {busyAction === "download" ? <Loader2 className="spin" size={18} /> : <Download size={18} />}
+            {busyAction === "download" ? "Downloading" : "Download Selected"}
           </button>
         </div>
       </div>

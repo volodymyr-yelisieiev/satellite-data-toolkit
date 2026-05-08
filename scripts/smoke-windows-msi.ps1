@@ -42,7 +42,12 @@ function Get-MsiProperty {
     return $null
   }
 
-  return $record.StringData(1)
+  $value = $record.StringData(1)
+  if ($value -is [array]) {
+    $value = $value[0]
+  }
+
+  return ([string]$value).Trim()
 }
 
 function Get-UninstallEntry {

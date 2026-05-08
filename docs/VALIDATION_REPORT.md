@@ -15,6 +15,7 @@ Additional changes validated locally:
 - `./scripts/verify.sh` now runs version consistency checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
 - CI now verifies Ubuntu, macOS, and Windows runners.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
+- Release workflow now refuses to publish public assets unless Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.

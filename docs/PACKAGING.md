@@ -180,7 +180,7 @@ Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts and 
 
 ## GitHub Release Workflow
 
-The `Release` workflow runs on `v*` tags or manual dispatch with an existing tag. It builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release.
+The `Release` workflow runs on `v*` tags or manual dispatch with an existing tag. It first runs a signing credential preflight and refuses to publish a public release unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After that gate passes, it builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release.
 
 Optional release signing secrets:
 
@@ -194,7 +194,7 @@ Optional release signing secrets:
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Apple ID notarization credential path. |
 | `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8_BASE64` | App Store Connect API notarization credential path. |
 
-When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, the workflow intentionally produces private-review artifacts and documents that public release is still blocked.
+When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally or the manual `Windows package` workflow for private-review artifacts; the public `Release` workflow is intentionally blocked.
 
 As of May 8, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags and be promoted as latest after macOS and Windows artifacts are attached.
 

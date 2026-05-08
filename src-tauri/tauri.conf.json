@@ -39,7 +39,6 @@
     "shortDescription": "Satellite data desktop toolkit",
     "longDescription": "One-click desktop toolkit for NASA POWER, EUMETSAT, NDVI, and PV estimate workflows.",
     "windows": {
-      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 \"%1\"",
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       }

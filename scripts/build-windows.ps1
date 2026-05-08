@@ -6,6 +6,20 @@ function Require-Command($Name) {
   }
 }
 
+function Invoke-CheckedCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Command,
+    [Parameter(Mandatory = $true)]
+    [string[]]$Arguments
+  )
+
+  & $Command @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Command failed with exit code $LASTEXITCODE"
+  }
+}
+
 Require-Command node
 Require-Command npm
 Require-Command cargo
@@ -45,9 +59,31 @@ node --version
 npm --version
 cargo --version
 
-npm ci
-npm run verify
-npm run tauri:build -- --bundles msi,nsis
+Invoke-CheckedCommand -Command "npm" -Arguments @("ci")
+Invoke-CheckedCommand -Command "npm" -Arguments @("run", "verify")
+
+$tauriBuildArgs = @("run", "tauri:build", "--", "--bundles", "msi,nsis")
+if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_COMMAND)) {
+  $signScript = (Resolve-Path "scripts\sign-windows.ps1").Path.Replace("\", "\\")
+  $signConfigPath = "target\windows-signing.tauri.conf.json"
+  $signCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$signScript`" `"%1`""
+  $signConfig = @{
+    bundle = @{
+      windows = @{
+        signCommand = $signCommand
+      }
+    }
+  } | ConvertTo-Json -Depth 5
+
+  New-Item -ItemType Directory -Path "target" -Force | Out-Null
+  $signConfig | Set-Content -Path $signConfigPath -Encoding ascii
+  $tauriBuildArgs += @("--config", $signConfigPath)
+  Write-Host "Windows Authenticode signing is enabled through scripts\sign-windows.ps1"
+} else {
+  Write-Host "Windows Authenticode signing is disabled: WINDOWS_SIGN_COMMAND is not configured"
+}
+
+Invoke-CheckedCommand -Command "npm" -Arguments $tauriBuildArgs
 Assert-WindowsGuiSubsystem "target\release\satellite-data-toolkit.exe"
 
 $msi = Get-ChildItem -Path "target\release\bundle\msi" -Filter "*.msi" -ErrorAction SilentlyContinue

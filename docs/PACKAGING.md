@@ -184,7 +184,7 @@ Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has
 
 ## GitHub Release Workflow
 
-The `Release` workflow runs on `v*` tags or manual dispatch with an existing tag. It first runs `scripts/check-release-secrets.sh` and refuses to publish a public release unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After that gate passes, it builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release.
+The `Release` workflow runs on `v*` tags or manual dispatch with an existing tag. It first runs `scripts/check-release-tag.sh` to require an existing SemVer-style tag that matches `package.json`, then runs `scripts/check-release-secrets.sh` and refuses to publish a public release unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After those gates pass, it builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release.
 
 Optional release signing secrets:
 

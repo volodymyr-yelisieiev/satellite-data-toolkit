@@ -58,6 +58,8 @@ Observed DMG SHA256:
 54f2a92fd8c85219a6a24e903b24cd51694471cb8bcc9cc9d7353f5d7e9fd2bf
 ```
 
+The `macOS package` workflow also passed on branch `codex/production-hardening`. Run `25576345173` passed on `2e23ecb`, ran `./scripts/build-macos.sh`, and uploaded `macos-dmg` (6,353,733 bytes) plus `macos-sha256sum` (320 bytes) artifacts for private review.
+
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
 
 Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25575059659` passed on `8e0411f` and uploaded `windows-msi` (6,883,556 bytes), `windows-nsis` (5,484,150 bytes), `windows-sha256sums` (294 bytes), and `windows-msi-smoke-logs` (22,453 bytes) artifacts after the unified full verify preflight, optional signing-command no-op path, and MSI quiet install/uninstall smoke.
@@ -68,7 +70,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 
 | Area | Result | Notes |
 | --- | --- | --- |
-| macOS local app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies and mounts. |
+| macOS app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies, and the `macOS package` workflow uploads DMG/checksum artifacts. |
 | macOS public release | Not ready | Gatekeeper rejects ad-hoc app/DMG because Developer ID signing and notarization are not configured. |
 | Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; MSI quiet install/uninstall smoke is wired into Windows workflows. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |

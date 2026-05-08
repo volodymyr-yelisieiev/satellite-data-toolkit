@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(root, "output", "visual-smoke");
 const port = Number(process.env.VISUAL_SMOKE_PORT ?? 4173);
 const baseUrl = `http://127.0.0.1:${port}`;
+const viteBin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 
 const screens = ["dashboard", "power", "eumetsat", "ndvi", "pv", "saved", "api", "settings", "about"];
 const viewports = [
@@ -35,15 +36,25 @@ function run(command, args, options = {}) {
 }
 
 function startPreview() {
-  const server = spawn("npm", ["run", "preview", "--", "--port", String(port), "--strictPort"], {
+  const server = spawn(viteBin, ["preview", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: root,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
     shell: process.platform === "win32",
   });
   server.stdout.on("data", (chunk) => process.stdout.write(chunk));
   server.stderr.on("data", (chunk) => process.stderr.write(chunk));
   return server;
+}
+
+function stopPreview(server) {
+  if (server.exitCode !== null) return;
+  if (process.platform === "win32") {
+    server.kill();
+  } else {
+    process.kill(-server.pid, "SIGTERM");
+  }
 }
 
 async function waitForPreview(server) {
@@ -67,13 +78,15 @@ async function capturePage(browser, screen, viewport) {
     viewport,
     reducedMotion: "reduce",
   });
+  page.setDefaultTimeout(15_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
 
-  await page.goto(`${baseUrl}/#${screen}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseUrl}/#${screen}`, { waitUntil: "domcontentloaded", timeout: 15_000 });
+  await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
   await page.locator(".app-shell").waitFor({ state: "visible", timeout: 10_000 });
   await page.waitForTimeout(150);
 
@@ -123,7 +136,7 @@ try {
   server = startPreview();
   await waitForPreview(server);
 
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ args: ["--disable-dev-shm-usage"], headless: true });
   const failures = [];
   for (const viewport of viewports) {
     for (const screen of screens) {
@@ -139,6 +152,6 @@ try {
 } finally {
   await browser?.close();
   if (server && server.exitCode === null) {
-    server.kill();
+    stopPreview(server);
   }
 }

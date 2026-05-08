@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "version:check": "node scripts/check-version-consistency.mjs",
+    "security:tauri-surface": "node scripts/check-tauri-surface.mjs",
     "test": "vitest --run",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",

@@ -15,7 +15,7 @@ Additional changes validated locally:
 - `./scripts/verify.sh` now runs TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
 - CI now verifies Ubuntu, macOS, and Windows runners.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
-- macOS and Windows packaging scripts now avoid hardcoded artifact versions and emit checksums.
+- macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
 
@@ -48,7 +48,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg.sha256
 Observed DMG SHA256:
 
 ```text
-12e3277c03c0eca12a9f20f5a2914750cfab077611a8bbc0e63a97bb186d58e9
+54f2a92fd8c85219a6a24e903b24cd51694471cb8bcc9cc9d7353f5d7e9fd2bf
 ```
 
 Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.

@@ -196,7 +196,7 @@ target/release/bundle/macos/Satellite Data Toolkit.app
 target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
-The script performs a local ad-hoc signature and verifies the `.app` with `codesign --verify --deep --strict`. It also rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG.
+Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -216,7 +216,7 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on Windows 10/11, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## GitHub CI/CD
 

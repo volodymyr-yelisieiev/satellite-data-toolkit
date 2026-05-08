@@ -33,6 +33,8 @@ jobs:
 
       - name: Build Windows installers
         shell: pwsh
+        env:
+          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
         run: .\scripts\build-windows.ps1
 
       - name: Upload MSI artifact

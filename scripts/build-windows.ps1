@@ -32,6 +32,15 @@ function Assert-WindowsGuiSubsystem($Path) {
   Write-Host "Windows subsystem: GUI (2)"
 }
 
+function Assert-AuthenticodeSignature($Path) {
+  $signature = Get-AuthenticodeSignature -FilePath $Path
+  if ($signature.Status -ne "Valid") {
+    throw "Authenticode signature is not valid for $Path`: $($signature.Status)"
+  }
+
+  Write-Host "Authenticode signature valid: $Path"
+}
+
 node --version
 npm --version
 cargo --version
@@ -59,3 +68,10 @@ $checksums = $artifacts | ForEach-Object {
 $checksumPath = "target\release\bundle\SHA256SUMS.txt"
 $checksums | Set-Content -Path $checksumPath -Encoding ascii
 Write-Host "SHA256 sums: $((Resolve-Path $checksumPath).Path)"
+
+if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_COMMAND)) {
+  Assert-AuthenticodeSignature "target\release\satellite-data-toolkit.exe"
+  $artifacts | ForEach-Object { Assert-AuthenticodeSignature $_.FullName }
+} else {
+  Write-Host "Authenticode verification skipped: WINDOWS_SIGN_COMMAND is not configured"
+}

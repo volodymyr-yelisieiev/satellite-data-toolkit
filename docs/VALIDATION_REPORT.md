@@ -19,7 +19,7 @@ Additional changes validated locally:
 - Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
 - Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, weekly Dependabot update configuration for npm, Cargo, and GitHub Actions, enabled GitHub Dependabot vulnerability alerts/automated security fixes, and `main` branch protection with required CI checks.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
-- Windows package and release workflows now run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics.
+- Windows package and release workflows now run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics; the Windows package workflow runs on pull requests and manual dispatches.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - EUMETSAT credential testing now requires both keychain slots plus a ready sidecar status instead of marking a single stored slot as ready.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
@@ -76,7 +76,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
-| Repository maintenance | Baseline+ | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit, weekly Dependabot update policy, vulnerability alerts, automated security fixes, and required-check branch protection including macOS DMG packaging are configured. |
+| Repository maintenance | Baseline+ | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit, weekly Dependabot update policy, vulnerability alerts, automated security fixes, and required-check branch protection including macOS DMG plus Windows installer packaging are configured. |
 | EUMETSAT | Partial | Sidecar command wiring and checksum-manifest trust gate exist, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, and Deflate-compressed TIFF inputs are covered in the pure-Rust path. |

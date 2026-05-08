@@ -222,11 +222,11 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The manual Windows package workflow and release workflow run a CI-level MSI silent install/uninstall smoke on the Windows runner. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The Windows package workflow runs on pull requests and manual dispatches, and the release workflow also runs a CI-level MSI silent install/uninstall smoke on the Windows runner. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## GitHub CI/CD
 
-The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts on pull requests and manual dispatches. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
 
 ```text
 macOS DMG
@@ -241,7 +241,7 @@ Dependabot is configured in `.github/dependabot.yml` for weekly npm, Cargo, and 
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
 
-The `main` branch is protected with up-to-date required checks for RustSec audit, macOS DMG packaging, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
+The `main` branch is protected with up-to-date required checks for RustSec audit, macOS DMG packaging, Windows installer packaging, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
 
 Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
 

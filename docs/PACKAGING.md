@@ -5,7 +5,7 @@ This project is cross-platform by design, but packaging must be performed on nat
 Current verified state:
 
 - macOS Apple Silicon: built and locally verified before this hardening pass; current script is checksum-producing and architecture/version agnostic, and the manual `macOS package` workflow produces private-review DMG/checksum artifacts.
-- Windows: GitHub Actions packaging has produced MSI/NSIS/checksum artifacts from this branch; install/uninstall QA still requires Windows 10/11 machines.
+- Windows: GitHub Actions packaging has produced MSI/NSIS/checksum artifacts from this branch and runs MSI quiet install/uninstall smoke on pull requests; real install/uninstall QA still requires Windows 10/11 machines.
 
 ## Build-Time Requirements
 
@@ -155,7 +155,7 @@ The Tauri config currently enables:
 
 This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image. Windows signing is skipped unless `WINDOWS_SIGN_COMMAND` is set. When it is set, `scripts/build-windows.ps1` injects a temporary Tauri `signCommand` config that calls `scripts/sign-windows.ps1`. The wrapper sets `WINDOWS_SIGN_FILE` to the file Tauri asked to sign, and also supports `{file}` or `%1` placeholders for signing providers that require positional substitution.
 
-The manual Windows package workflow and release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
+The Windows package workflow runs on pull requests and manual dispatches. It and the release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
 
 ## Windows Release Checklist
 

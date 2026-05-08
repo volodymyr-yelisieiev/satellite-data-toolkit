@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 command -v cargo >/dev/null 2>&1 || { echo "cargo is required" >&2; exit 1; }
 command -v cargo-audit >/dev/null 2>&1 || {

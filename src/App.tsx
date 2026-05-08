@@ -84,6 +84,12 @@ const powerTabs = [
   { id: "pv" as Screen, title: "PV ESTIMATE", icon: BarChart3 },
 ];
 
+const REPOSITORY_URL = "https://github.com/volodymyr-yelisieiev/satellite-data-toolkit";
+const RELEASES_URL = `${REPOSITORY_URL}/releases`;
+const POWER_API_DOCS_URL = "https://power.larc.nasa.gov/docs/services/api/";
+const TAURI_URL = "https://tauri.app/";
+const PVWATTS_DOCS_URL = "https://developer.nlr.gov/docs/solar/pvwatts/";
+
 function screenFromHash(): Screen {
   if (typeof window === "undefined") return "power";
   const candidate = window.location.hash.replace(/^#/, "");
@@ -400,18 +406,18 @@ function App() {
         </div>
 
         <footer className="footer">
-          <a href="https://github.com" target="_blank" rel="noreferrer">
+          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">
             <GitBranch size={16} />
             GitHub
           </a>
-          <a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">
+          <a href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">
             <FileJson size={16} />
             Documentation
           </a>
-          <button type="button" onClick={() => addLog("Updater is not configured for this local build")}>
+          <a href={RELEASES_URL} target="_blank" rel="noreferrer">
             <CloudDownload size={16} />
-            Check for Updates
-          </button>
+            Releases
+          </a>
         </footer>
       </section>
     </main>
@@ -449,7 +455,7 @@ function PowerScreen(props: {
           <h1>NASA POWER</h1>
           <p>Access solar and meteorological data from NASA POWER API</p>
         </div>
-        <a className="doc-button" href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">
+        <a className="doc-button" href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">
           API Documentation
           <ExternalLink size={16} />
         </a>
@@ -1284,9 +1290,10 @@ function AboutScreen() {
           Windows install QA, EUMDAC bundling, and live PVWatts/NLR validation require release credentials or target platforms.
         </p>
         <div className="source-list">
-          <a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">NASA POWER API</a>
-          <a href="https://tauri.app/" target="_blank" rel="noreferrer">Tauri</a>
-          <a href="https://developer.nlr.gov/docs/solar/pvwatts/" target="_blank" rel="noreferrer">PVWatts V8</a>
+          <a href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">NASA POWER API</a>
+          <a href={TAURI_URL} target="_blank" rel="noreferrer">Tauri</a>
+          <a href={PVWATTS_DOCS_URL} target="_blank" rel="noreferrer">PVWatts V8</a>
+          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">Source Repository</a>
         </div>
       </div>
     </section>

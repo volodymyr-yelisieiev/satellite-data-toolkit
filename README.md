@@ -105,6 +105,7 @@ Credential slots are stored in the OS keychain with service name `Satellite Data
 NASA POWER does not require an API key.
 
 Important: EUMETSAT credential sync is implemented for the sidecar workflow, but final authentication/search/download behavior must be validated against the exact bundled EUMDAC distribution and real credentials.
+The API Slots test action reports EUMETSAT as ready only when both consumer key and consumer secret are stored and the EUMDAC sidecar is trusted or explicitly allowed for local development.
 
 ## Local Storage
 

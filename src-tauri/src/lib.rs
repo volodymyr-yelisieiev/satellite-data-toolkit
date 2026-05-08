@@ -295,16 +295,16 @@ fn delete_api_key(name: String) -> Result<(), String> {
 #[tauri::command]
 async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
     validate_secret_name(&name)?;
-    let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
-    if !present {
-        return Ok(CredentialTestResult {
-            slot: name,
-            ok: false,
-            message: "No credential stored for this slot".to_string(),
-        });
-    }
 
     if name == "nlr_pvwatts_key" {
+        let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
+        if !present {
+            return Ok(CredentialTestResult {
+                slot: name,
+                ok: false,
+                message: "No credential stored for this slot".to_string(),
+            });
+        }
         let request = PvWattsRequest {
             latitude: 40.7128,
             longitude: -74.006,
@@ -334,11 +334,17 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
         }
     }
 
-    Ok(CredentialTestResult {
-        slot: name,
-        ok: true,
-        message: "Credential is stored. EUMETSAT live validation requires bundled EUMDAC and both key/secret slots.".to_string(),
-    })
+    let key_present = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
+    let secret_present =
+        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
+    let sidecar_status = eumdac_sidecar_status()?;
+    Ok(evaluate_eumetsat_credential_status(
+        name,
+        key_present,
+        secret_present,
+        &sidecar_status,
+        allow_unverified_eumdac_sidecar(),
+    ))
 }
 
 #[tauri::command]
@@ -618,6 +624,36 @@ fn validate_secret_name(name: &str) -> Result<(), String> {
     match name {
         "eumetsat_consumer_key" | "eumetsat_consumer_secret" | "nlr_pvwatts_key" => Ok(()),
         _ => Err("unknown API slot".to_string()),
+    }
+}
+
+fn evaluate_eumetsat_credential_status(
+    slot: String,
+    key_present: bool,
+    secret_present: bool,
+    sidecar_status: &EumdacSidecarStatus,
+    allow_unverified_sidecar: bool,
+) -> CredentialTestResult {
+    if !key_present || !secret_present {
+        return CredentialTestResult {
+            slot,
+            ok: false,
+            message: "Both EUMETSAT consumer key and consumer secret must be stored".to_string(),
+        };
+    }
+
+    if sidecar_status.trusted || (sidecar_status.found && allow_unverified_sidecar) {
+        CredentialTestResult {
+            slot,
+            ok: true,
+            message: "EUMETSAT credentials are stored and the EUMDAC sidecar is ready".to_string(),
+        }
+    } else {
+        CredentialTestResult {
+            slot,
+            ok: false,
+            message: sidecar_status.message.clone(),
+        }
     }
 }
 
@@ -1056,6 +1092,84 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn eumetsat_credential_test_requires_both_slots() {
+        let status = ready_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_key".to_string(),
+            true,
+            false,
+            &status,
+            false,
+        );
+
+        assert!(!result.ok);
+        assert!(result.message.contains("Both EUMETSAT"));
+    }
+
+    #[test]
+    fn eumetsat_credential_test_requires_ready_sidecar() {
+        let status = missing_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_secret".to_string(),
+            true,
+            true,
+            &status,
+            false,
+        );
+
+        assert!(!result.ok);
+        assert_eq!(result.message, "EUMDAC sidecar is not bundled");
+    }
+
+    #[test]
+    fn eumetsat_credential_test_passes_with_credentials_and_sidecar() {
+        let status = ready_eumdac_status();
+
+        let result = evaluate_eumetsat_credential_status(
+            "eumetsat_consumer_secret".to_string(),
+            true,
+            true,
+            &status,
+            false,
+        );
+
+        assert!(result.ok);
+        assert!(result.message.contains("sidecar is ready"));
+    }
+
+    fn ready_eumdac_status() -> EumdacSidecarStatus {
+        EumdacSidecarStatus {
+            found: true,
+            trusted: true,
+            path: Some("/tmp/eumdac".to_string()),
+            file_name: Some("eumdac".to_string()),
+            sha256: Some("abc".to_string()),
+            manifest_path: Some("/tmp/eumdac-sidecar-manifest.json".to_string()),
+            version: Some("3.0.0".to_string()),
+            source: None,
+            license: None,
+            message: "ready".to_string(),
+        }
+    }
+
+    fn missing_eumdac_status() -> EumdacSidecarStatus {
+        EumdacSidecarStatus {
+            found: false,
+            trusted: false,
+            path: None,
+            file_name: None,
+            sha256: None,
+            manifest_path: None,
+            version: None,
+            source: None,
+            license: None,
+            message: "EUMDAC sidecar is not bundled".to_string(),
+        }
     }
 
     #[test]

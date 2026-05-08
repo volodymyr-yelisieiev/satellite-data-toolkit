@@ -58,7 +58,7 @@ npm audit --omit=dev
 cargo install cargo-audit --locked --version 0.22.1
 ```
 
-The GitHub RustSec audit workflow and release workflow gate run the same advisory class through `rustsec/audit-check@v2.0.0`. The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
+The GitHub RustSec audit workflow and release workflow gate install `cargo-audit` 0.22.1 and run the same script. The current automated npm audit intentionally checks production dependencies only. Dev dependency audit should be reviewed before release as a separate policy decision.
 
 ## macOS Local Review Build
 

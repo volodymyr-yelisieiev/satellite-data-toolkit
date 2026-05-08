@@ -13,8 +13,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  issues: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -28,7 +26,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: RustSec cargo audit
-        uses: rustsec/audit-check@v2.0.0
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          workspaces: ". -> target"
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.1
+
+      - name: Run RustSec audit
+        run: ./scripts/audit-rust.sh

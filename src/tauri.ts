@@ -18,6 +18,7 @@ import type {
 } from "./types";
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const demoLatencyMs = import.meta.env.MODE === "test" ? 0 : 250;
 const demoSavedDatasets: Array<SavedDataset & { dataset: PowerDataset }> = [];
 const demoApiSlots = new Set<string>();
 
@@ -50,7 +51,7 @@ const sampleDataset = (request: PowerRequest): PowerDataset => ({
 });
 
 async function demoInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  await new Promise((resolve) => window.setTimeout(resolve, 250));
+  await new Promise((resolve) => globalThis.setTimeout(resolve, demoLatencyMs));
   if (command === "fetch_power_dataset") {
     return sampleDataset(args?.request as PowerRequest) as T;
   }
@@ -95,7 +96,7 @@ async function demoInvoke<T>(command: string, args?: Record<string, unknown>): P
   if (command === "save_dataset") {
     const dataset = args?.dataset as PowerDataset;
     const item = {
-      id: crypto.randomUUID(),
+      id: globalThis.crypto?.randomUUID?.() ?? `demo-${Date.now()}-${Math.random()}`,
       name: String(args?.name ?? "Demo dataset"),
       kind: "nasa_power",
       createdAt: new Date().toISOString(),

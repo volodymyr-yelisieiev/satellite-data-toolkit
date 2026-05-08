@@ -90,7 +90,7 @@ The script:
 - verifies the DMG with `hdiutil verify`;
 - writes a `.sha256` checksum next to the DMG.
 
-The `macOS package` GitHub workflow runs this script on `macos-latest` for packaging-related pull request changes and manual dispatches. It uploads `macos-dmg` and `macos-sha256sum` artifacts for private review and does not bypass the public-release signing/notarization requirements below.
+The `macOS package` GitHub workflow runs this script on `macos-latest` for pull requests and manual dispatches. It uploads `macos-dmg` and `macos-sha256sum` artifacts for private review and does not bypass the public-release signing/notarization requirements below.
 
 Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It is suitable for private review, not public distribution.
 

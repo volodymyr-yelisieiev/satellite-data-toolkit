@@ -202,7 +202,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-The `macOS package` workflow runs the same script on `macos-latest` for packaging-related pull request changes and manual dispatches, then uploads the DMG plus checksum for private review builds.
+The `macOS package` workflow runs the same script on `macos-latest` for pull requests and manual dispatches, then uploads the DMG plus checksum for private review builds.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -241,7 +241,7 @@ Dependabot is configured in `.github/dependabot.yml` for weekly npm, Cargo, and 
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
 
-The `main` branch is protected with up-to-date required checks for RustSec audit, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
+The `main` branch is protected with up-to-date required checks for RustSec audit, macOS DMG packaging, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
 
 Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
 

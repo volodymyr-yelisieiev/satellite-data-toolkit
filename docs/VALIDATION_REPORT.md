@@ -66,18 +66,53 @@ Windows packaging was triggered with the `Windows package` workflow on branch `c
 
 Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags and Deflate-compressed TIFF inputs: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
 
+## 2026-05-09 Packaging Sidecar Addendum
+
+Scope: packaging and EUMDAC sidecar hardening on branch `codex/package-clean-builds` / PR #16.
+
+Additional changes validated locally:
+
+- macOS and Windows packaging scripts remove stale package outputs before native packaging.
+- `npm run eumdac:prepare` stages pinned EUMDAC 3.1.1 standalone sidecars from official EUMETSAT GitLab release assets, verifies archive and extracted binary SHA256 values, writes the Tauri `externalBin` overlay, and writes `eumdac-sidecar-manifest.json`.
+- macOS packaging signs app executables, including the bundled EUMDAC sidecar, refreshes the bundled sidecar manifest to the post-sign sidecar hash, rebuilds the final DMG from the signed app, and wires explicit `notarytool` app/DMG submission plus stapling for configured public releases.
+- Windows packaging signs the staged EUMDAC sidecar before packaging when `WINDOWS_SIGN_COMMAND` is set, refreshes the generated manifest, and fails the build if the packaged sidecar hash does not match the packaged manifest.
+- The backend now searches both the packaged executable directory and Tauri resource directory for the EUMDAC sidecar manifest.
+
+Local commands run successfully on May 9, 2026:
+
+```bash
+bash -n scripts/build-macos.sh scripts/check-release-secrets.sh scripts/audit-rust.sh scripts/verify.sh
+node --check scripts/prepare-eumdac-sidecars.mjs
+npm run verify
+npm run eumdac:prepare
+npm run eumdac:prepare -- --all
+./scripts/build-macos.sh
+codesign --verify --deep --strict --verbose=2 "target/release/bundle/macos/Satellite Data Toolkit.app"
+git diff --check
+```
+
+Current local macOS sidecar and DMG verification:
+
+```text
+Bundled EUMDAC sidecar SHA256: 994ad4166c3bda13826998a44267ef3ddb07b5b44b0e57ebbba4e797cfd6cac3
+Bundled manifest runtime entry: 994ad4166c3bda13826998a44267ef3ddb07b5b44b0e57ebbba4e797cfd6cac3
+DMG SHA256: f206007ee4d2d911de8ade7e736d7b59a110a0ef8fdb5eeaa561075d1e7ab1a6
+```
+
+GitHub Actions status for PR #16 is blocked by account billing/spending-limit before jobs start. The observed annotation is: `The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings`.
+
 ## Executive Status
 
 | Area | Result | Notes |
 | --- | --- | --- |
-| macOS app/DMG | Pass for private review | `.app` builds, ad-hoc codesign verifies, DMG verifies, and the `macOS package` workflow uploads DMG/checksum artifacts. |
-| macOS public release | Not ready | Gatekeeper rejects ad-hoc app/DMG because Developer ID signing and notarization are not configured. |
-| Windows packaging | CI build pass | MSI/NSIS/checksum artifacts were produced by the manual Windows package workflow; MSI quiet install/uninstall smoke is wired into Windows workflows. Real Windows 10/11 install/uninstall QA is still required. |
+| macOS app/DMG | Pass for private review | `.app` builds, EUMDAC sidecar is staged, ad-hoc codesign verifies, bundled sidecar manifest matches the post-sign sidecar hash, and DMG verifies locally. |
+| macOS public release | Not ready | Developer ID certificate/notarization secrets are not configured, so the release-certificate signing, notarization, stapling, and Gatekeeper path still needs external validation. |
+| Windows packaging | Script hardened, native rerun blocked | MSI/NSIS/checksum artifacts were produced by the earlier manual Windows package workflow; the current script also verifies packaged EUMDAC sidecar hash/signature expectations, but GitHub Actions billing currently prevents a fresh Windows runner pass. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
 | Repository maintenance | Baseline+ | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit, weekly Dependabot update policy, vulnerability alerts, automated security fixes, and required-check branch protection including macOS DMG plus Windows installer packaging are configured. |
-| EUMETSAT | Partial | Sidecar command wiring and checksum-manifest trust gate exist, but no EUMDAC sidecar/credentials were available for live QA. |
+| EUMETSAT | Partial | Sidecar command wiring, packaging-sidecar staging, and checksum-manifest trust gate exist, but live credential search/download QA still requires real EUMETSAT credentials. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, and Deflate-compressed TIFF inputs are covered in the pure-Rust path. |
 
@@ -260,8 +295,8 @@ Viewport checks:
 ## Not Fully Verifiable In This Workspace
 
 - Windows MSI/NSIS install, launch, Credential Manager, WebView2, signing, and uninstall checks on real Windows 10/11 machines.
-- Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance.
-- EUMETSAT live product search/download because no bundled sidecar and test credentials were available.
+- Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance with real Apple Developer credentials.
+- EUMETSAT live product search/download because no test credentials were available.
 - PVWatts/NLR live API result because no API key was available.
 - Broader NDVI fixture coverage for tiled and multi-provider GeoTIFFs beyond the local metadata/compression preservation tests.
 
@@ -273,6 +308,6 @@ Do not present it as a public cross-platform release until:
 
 - Windows QA is run on Windows;
 - macOS signing/notarization is configured;
-- EUMDAC sidecars are bundled and signed;
+- EUMDAC sidecars are validated with release-certificate signing/notarization on macOS and Authenticode signing on Windows;
 - EUMETSAT/PVWatts live credentials are tested;
 - Broader NDVI GeoTIFF fixture QA is completed for the target satellite providers.

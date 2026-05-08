@@ -48,11 +48,10 @@ These pull requests represent the current production-hardening queue and should 
 
 Production completion is currently blocked by issues outside the local source tree:
 
-- GitHub Actions jobs cannot start because account billing or spending-limit state blocks runners.
-- Apple Developer ID signing and notarization secrets are not configured.
-- Windows Authenticode signing is not configured.
-- Native Windows 10/11 install, uninstall, visual, SmartScreen, and first-launch QA has not been completed.
-- Live EUMETSAT and PVWatts credentials are not available for packaged-app validation.
+- GitHub Actions jobs cannot start because account billing or spending-limit state blocks runners: #28.
+- Apple Developer ID signing and notarization secrets are not configured: #27.
+- Windows Authenticode signing is not configured, and native Windows 10/11 install, uninstall, visual, SmartScreen, and first-launch QA has not been completed: #25.
+- Live EUMETSAT and PVWatts credentials are not available for packaged-app validation: #26.
 
 ## Production Sign-Off Gate
 

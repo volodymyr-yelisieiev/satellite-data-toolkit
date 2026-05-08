@@ -387,6 +387,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use tiff::encoder::{Compression, DeflateLevel};
 
     #[test]
     fn computes_ndvi_and_marks_zero_sum_as_nodata() {
@@ -463,6 +464,45 @@ mod tests {
         let _ = std::fs::remove_file(output_path);
     }
 
+    #[test]
+    fn run_ndvi_reads_deflate_compressed_tiff_inputs() {
+        let red_path = temp_tiff_path("red_deflate");
+        let nir_path = temp_tiff_path("nir_deflate");
+        let output_path = temp_tiff_path("ndvi_deflate");
+
+        write_test_tiff_with_compression(
+            &red_path,
+            &[0.1, 0.2],
+            None,
+            Compression::Deflate(DeflateLevel::Fast),
+        );
+        write_test_tiff_with_compression(
+            &nir_path,
+            &[0.3, 0.6],
+            None,
+            Compression::Deflate(DeflateLevel::Fast),
+        );
+
+        let result = run_ndvi(&NdviJob {
+            red_path: red_path.to_string_lossy().to_string(),
+            nir_path: nir_path.to_string_lossy().to_string(),
+            output_path: output_path.to_string_lossy().to_string(),
+            red_scale: 1.0,
+            nir_scale: 1.0,
+            nodata_value: None,
+        })
+        .unwrap();
+
+        assert_eq!(result.valid_pixel_count, 2);
+        assert_eq!(result.nodata_pixel_count, 0);
+        assert_eq!(result.min, Some(0.5));
+        assert!((result.max.unwrap() - 0.5).abs() < 0.001);
+
+        let _ = std::fs::remove_file(red_path);
+        let _ = std::fs::remove_file(nir_path);
+        let _ = std::fs::remove_file(output_path);
+    }
+
     struct TestGeoTags {
         model_pixel_scale: Vec<f64>,
         model_tiepoint: Vec<f64>,
@@ -471,8 +511,19 @@ mod tests {
     }
 
     fn write_test_tiff(path: &Path, values: &[f32], tags: Option<TestGeoTags>) {
+        write_test_tiff_with_compression(path, values, tags, Compression::Uncompressed);
+    }
+
+    fn write_test_tiff_with_compression(
+        path: &Path,
+        values: &[f32],
+        tags: Option<TestGeoTags>,
+        compression: Compression,
+    ) {
         let file = File::create(path).unwrap();
-        let mut encoder = TiffEncoder::new(BufWriter::new(file)).unwrap();
+        let mut encoder = TiffEncoder::new(BufWriter::new(file))
+            .unwrap()
+            .with_compression(compression);
         let mut image = encoder.new_image::<colortype::Gray32Float>(2, 1).unwrap();
         if let Some(tags) = tags {
             image

@@ -262,7 +262,7 @@ It intentionally excludes heavy/generated/local files:
 - Bundled, signed, checksum-verified EUMDAC sidecar per platform.
 - Live EUMETSAT auth/search/download QA with real credentials and the exact bundled sidecar.
 - Live PVWatts/NLR QA with real API key.
-- Broader NDVI QA with real-world tiled/compressed/multi-provider GeoTIFF fixtures.
+- Broader NDVI QA with real-world tiled and multi-provider GeoTIFF fixtures.
 
 ## Troubleshooting
 

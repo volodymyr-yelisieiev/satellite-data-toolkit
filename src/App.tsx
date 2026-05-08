@@ -40,6 +40,7 @@ import {
 import type {
   ActivityLogEntry,
   CredentialTestResult,
+  DownloadResult,
   EumetsatProduct,
   EumetsatQuery,
   EumdacSidecarStatus,
@@ -726,8 +727,8 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
 
   async function downloadProduct() {
     try {
-      await invoke("download_eumetsat_product", { collectionId: query.collectionId, productId: selectedProduct, outputDir });
-      addLog(`EUMETSAT product download started: ${selectedProduct}`);
+      const result = await invoke<DownloadResult>("download_eumetsat_product", { collectionId: query.collectionId, productId: selectedProduct, outputDir });
+      addLog(`EUMETSAT product download completed: ${result.productId} -> ${result.outputDir}`);
     } catch (err) {
       addLog(`EUMETSAT download failed: ${errorMessage(err)}`);
     }

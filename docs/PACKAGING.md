@@ -227,7 +227,7 @@ For production:
 
 ```text
 eumdac set-credentials <consumer_key> <consumer_secret>
-eumdac search -c <collection> -s <start> -e <end> --bbox <v1> <v2> <v3> <v4> --limit <n>
+eumdac search -c <collection> -s <start> -e <end> --bbox <west> <south> <east> <north> --limit <n>
 eumdac download -c <collection> -p <product> -o <output_dir>
 ```
 

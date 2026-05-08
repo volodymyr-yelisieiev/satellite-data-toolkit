@@ -35,7 +35,7 @@ pub enum PvWattsError {
     #[error("failed to build PVWatts URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("request failed: {0}")]
-    Request(#[from] reqwest::Error),
+    Request(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,18 +95,28 @@ pub async fn estimate_pvwatts(
     let url = build_url(&request, api_key)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
-        .build()?;
-    let response = client.get(url).send().await?;
+        .build()
+        .map_err(sanitized_request_error)?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(sanitized_request_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(PvWattsError::ApiStatus {
             status: status.as_u16(),
-            body: response.text().await.unwrap_or_default(),
+            body: redact_api_key(&response.text().await.unwrap_or_default()),
         });
     }
-    let parsed = response.json::<PvWattsApiResponse>().await?;
+    let parsed = response
+        .json::<PvWattsApiResponse>()
+        .await
+        .map_err(sanitized_request_error)?;
     if !parsed.errors.is_empty() {
-        return Err(PvWattsError::ApiErrors(parsed.errors.join("; ")));
+        return Err(PvWattsError::ApiErrors(redact_api_key(
+            &parsed.errors.join("; "),
+        )));
     }
     Ok(PvWattsResult {
         ac_annual_kwh: parsed.outputs.ac_annual,
@@ -116,6 +126,30 @@ pub async fn estimate_pvwatts(
         warnings: parsed.warnings,
         method: "PVWatts V8/NLR".to_string(),
     })
+}
+
+fn sanitized_request_error(error: reqwest::Error) -> PvWattsError {
+    PvWattsError::Request(redact_api_key(&error.to_string()))
+}
+
+fn redact_api_key(message: &str) -> String {
+    let mut redacted = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(index) = rest.find("api_key=") {
+        let (before, after_key) = rest.split_at(index);
+        redacted.push_str(before);
+        redacted.push_str("api_key=[redacted]");
+
+        let after_value = &after_key["api_key=".len()..];
+        let end = after_value
+            .find(|character: char| {
+                matches!(character, '&' | ')' | ' ' | '"' | '\'' | '\n' | '\r' | '\t')
+            })
+            .unwrap_or(after_value.len());
+        rest = &after_value[end..];
+    }
+    redacted.push_str(rest);
+    redacted
 }
 
 fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
@@ -195,6 +229,16 @@ mod tests {
         assert!(query.contains("api_key=secret"));
         assert!(query.contains("system_capacity=10"));
         assert!(query.contains("timeframe=monthly"));
+    }
+
+    #[test]
+    fn redacts_api_key_from_user_visible_errors() {
+        let message = "request failed for url (https://developer.nlr.gov/api/pvwatts/v8.json?api_key=secret-token&lat=40)";
+        let redacted = redact_api_key(message);
+
+        assert!(!redacted.contains("secret-token"));
+        assert!(redacted.contains("api_key=[redacted]"));
+        assert!(redacted.contains("lat=40"));
     }
 
     #[test]

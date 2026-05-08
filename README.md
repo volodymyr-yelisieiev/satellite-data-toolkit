@@ -91,7 +91,7 @@ eumdac-cli.exe
 
 next to the packaged executable. The backend computes the sidecar SHA256 and only trusts it when a matching entry exists in `eumdac-sidecar-manifest.json` or `eumdac-sidecars.json` next to the executable. Production packaging should place platform-specific EUMDAC binaries under `src-tauri/binaries/`, add them to `src-tauri/tauri.conf.json > bundle.externalBin`, record checksum/license/source in the manifest, and sign/notarize them with the app.
 
-EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Process errors are redacted before being returned to the UI.
+EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Search bounding boxes are sent as `W,S,E,N` coordinates in EPSG:4326 decimal degrees. Process errors are redacted before being returned to the UI.
 
 ## Credentials
 

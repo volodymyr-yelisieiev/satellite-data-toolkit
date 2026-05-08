@@ -7,7 +7,7 @@ use crate::nasa_power::PowerDataset;
 pub enum PvError {
     #[error("capacity must be greater than zero")]
     InvalidCapacity,
-    #[error("losses must be between 0 and 100 percent")]
+    #[error("losses must be between -5 and 100 percent")]
     InvalidLosses,
     #[error("inverter efficiency must be between 0 and 100 percent")]
     InvalidInverter,
@@ -44,7 +44,7 @@ pub fn estimate_pv(input: PvEstimateInput) -> Result<PvEstimate, PvError> {
     if input.capacity_kw <= 0.0 {
         return Err(PvError::InvalidCapacity);
     }
-    if !(0.0..100.0).contains(&input.losses_percent) {
+    if !(-5.0..100.0).contains(&input.losses_percent) {
         return Err(PvError::InvalidLosses);
     }
     if !(0.0..=100.0).contains(&input.inverter_efficiency_percent) {
@@ -224,6 +224,21 @@ mod tests {
         assert!((estimate.average_power_kw - 2.5).abs() < 0.001);
         assert_eq!(estimate.used_record_count, 1);
         assert_eq!(estimate.missing_record_count, 1);
+    }
+
+    #[test]
+    fn accepts_limited_negative_losses_to_match_pvwatts_controls() {
+        let dataset = test_dataset("kWh/m^2/day");
+        let estimate = estimate_pv(PvEstimateInput {
+            dataset,
+            capacity_kw: 10.0,
+            irradiance_parameter: "ALLSKY_SFC_SW_DWN".to_string(),
+            losses_percent: -1.0,
+            inverter_efficiency_percent: 100.0,
+        })
+        .unwrap();
+
+        assert!(estimate.performance_ratio > 1.0);
     }
 
     fn test_dataset(unit: &str) -> PowerDataset {

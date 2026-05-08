@@ -693,7 +693,7 @@ function DashboardTile(props: { icon: typeof Home; label: string; value: string;
 function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
   const [query, setQuery] = useState<EumetsatQuery>({
     collectionId: "EO:EUM:DAT:METOP:OSI-104",
-    bbox: "51.28,51.69,0.51,0.33",
+    bbox: "-0.51,51.28,0.33,51.69",
     startTime: "2024-11-10T08:00:00",
     endTime: "2024-11-10T09:00:00",
     limit: 20,
@@ -752,7 +752,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
           <label>
             Bounding Box
-            <input value={query.bbox} onChange={(event) => update("bbox", event.target.value)} />
+            <input value={query.bbox} placeholder="W,S,E,N" onChange={(event) => update("bbox", event.target.value)} />
           </label>
           <label>
             Start Time

@@ -893,28 +893,41 @@ fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
 }
 
 fn parse_eumdac_bbox(value: &str) -> Result<[String; 4], String> {
-    let parts = value
+    let coordinates = value
         .split(|character: char| character == ',' || character.is_whitespace())
         .map(str::trim)
         .filter(|part| !part.is_empty())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    if parts.len() != 4 {
-        return Err("bbox must contain four comma- or space-separated numbers".to_string());
+        .map(|part| {
+            let number = part
+                .parse::<f64>()
+                .map_err(|_| "bbox must contain only finite numbers".to_string())?;
+            if !number.is_finite() {
+                return Err("bbox must contain only finite numbers".to_string());
+            }
+            Ok((part.to_string(), number))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if coordinates.len() != 4 {
+        return Err("bbox must contain four W,S,E,N coordinates".to_string());
     }
-    for part in &parts {
-        let number = part
-            .parse::<f64>()
-            .map_err(|_| "bbox must contain only finite numbers".to_string())?;
-        if !number.is_finite() {
-            return Err("bbox must contain only finite numbers".to_string());
-        }
+    let west = coordinates[0].1;
+    let south = coordinates[1].1;
+    let east = coordinates[2].1;
+    let north = coordinates[3].1;
+    if !(-180.0..=180.0).contains(&west) || !(-180.0..=180.0).contains(&east) {
+        return Err("bbox west/east coordinates must be between -180 and 180".to_string());
+    }
+    if !(-90.0..=90.0).contains(&south) || !(-90.0..=90.0).contains(&north) {
+        return Err("bbox south/north coordinates must be between -90 and 90".to_string());
+    }
+    if west > east || south > north {
+        return Err("bbox must be ordered as west,south,east,north".to_string());
     }
     Ok([
-        parts[0].clone(),
-        parts[1].clone(),
-        parts[2].clone(),
-        parts[3].clone(),
+        coordinates[0].0.clone(),
+        coordinates[1].0.clone(),
+        coordinates[2].0.clone(),
+        coordinates[3].0.clone(),
     ])
 }
 
@@ -1065,14 +1078,16 @@ mod tests {
     #[test]
     fn parses_comma_or_space_separated_eumdac_bbox() {
         assert_eq!(
-            parse_eumdac_bbox("51.28,51.69,0.51,0.33").unwrap(),
-            ["51.28", "51.69", "0.51", "0.33"]
+            parse_eumdac_bbox("-0.51,51.28,0.33,51.69").unwrap(),
+            ["-0.51", "51.28", "0.33", "51.69"]
         );
         assert_eq!(
-            parse_eumdac_bbox("51.28 51.69 0.51 0.33").unwrap(),
-            ["51.28", "51.69", "0.51", "0.33"]
+            parse_eumdac_bbox("-0.51 51.28 0.33 51.69").unwrap(),
+            ["-0.51", "51.28", "0.33", "51.69"]
         );
         assert!(parse_eumdac_bbox("51.28,invalid,0.51,0.33").is_err());
+        assert!(parse_eumdac_bbox("51.28,51.69,0.51,0.33").is_err());
+        assert!(parse_eumdac_bbox("-181,51.28,0.33,51.69").is_err());
     }
 
     #[test]

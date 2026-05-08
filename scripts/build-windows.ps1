@@ -59,6 +59,18 @@ node --version
 npm --version
 cargo --version
 
+$staleArtifactPaths = @(
+  "target\release\bundle\msi",
+  "target\release\bundle\nsis",
+  "target\release\bundle\SHA256SUMS.txt",
+  "target\windows-signing.tauri.conf.json"
+)
+foreach ($stalePath in $staleArtifactPaths) {
+  if (Test-Path $stalePath) {
+    Remove-Item -Path $stalePath -Recurse -Force
+  }
+}
+
 Invoke-CheckedCommand -Command "npm" -Arguments @("ci")
 Invoke-CheckedCommand -Command "npm" -Arguments @("run", "verify")
 

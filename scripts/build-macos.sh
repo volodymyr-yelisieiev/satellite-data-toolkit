@@ -9,6 +9,10 @@ command -v codesign >/dev/null 2>&1 || { echo "codesign is required" >&2; exit 1
 command -v hdiutil >/dev/null 2>&1 || { echo "hdiutil is required" >&2; exit 1; }
 command -v shasum >/dev/null 2>&1 || { echo "shasum is required" >&2; exit 1; }
 
+rm -rf \
+  target/release/bundle/macos \
+  target/release/bundle/dmg
+
 has_macos_notarization_credentials() {
   [[ -n "${MACOS_NOTARY_KEYCHAIN_PROFILE:-}" ]] ||
     [[ -n "${APPLE_ID:-}" && -n "${APPLE_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]] ||
@@ -22,6 +26,7 @@ npm run tauri:build -- --bundles app,dmg
 APP_PATH="target/release/bundle/macos/Satellite Data Toolkit.app"
 DMG_PATH="$(find target/release/bundle/dmg -maxdepth 1 -type f -name '*.dmg' -print -quit)"
 STAGING_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "macOS app was not produced: $APP_PATH" >&2
@@ -64,7 +69,6 @@ else
     "$DMG_PATH"
 fi
 
-rm -rf "$STAGING_DIR"
 hdiutil verify "$DMG_PATH"
 
 shasum -a 256 "$DMG_PATH" > "${DMG_PATH}.sha256"

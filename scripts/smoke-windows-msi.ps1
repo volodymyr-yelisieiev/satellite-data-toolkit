@@ -35,14 +35,16 @@ function Get-MsiProperty {
   $database = $installer.OpenDatabase($Path, 0)
   $query = "SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = '$Name'"
   $view = $database.OpenView($query)
-  $view.Execute()
+  $null = $view.Execute()
   $record = $view.Fetch()
 
   if ($null -eq $record) {
+    $view.Close()
     return $null
   }
 
   $value = $record.StringData(1)
+  $view.Close()
   if ($value -is [array]) {
     $value = $value[0]
   }

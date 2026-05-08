@@ -1061,9 +1061,15 @@ function SavedScreen({
   const [lastPath, setLastPath] = useState("");
 
   async function refresh() {
-    const saved = await listSavedDatasets();
-    setItems(saved);
-    onSavedCountChange(saved.length);
+    try {
+      const saved = await listSavedDatasets();
+      setItems(saved);
+      onSavedCountChange(saved.length);
+    } catch (err) {
+      setItems([]);
+      onSavedCountChange(0);
+      addLog(`Saved dataset refresh failed: ${errorMessage(err)}`);
+    }
   }
 
   useEffect(() => {

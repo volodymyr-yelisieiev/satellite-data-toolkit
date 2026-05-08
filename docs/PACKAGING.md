@@ -154,9 +154,9 @@ The Tauri config currently enables:
 }
 ```
 
-This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image. Windows signing is skipped unless `WINDOWS_SIGN_COMMAND` is set. When it is set, `scripts/build-windows.ps1` injects a temporary Tauri `signCommand` config that calls `scripts/sign-windows.ps1`. The wrapper sets `WINDOWS_SIGN_FILE` to the file Tauri asked to sign, and also supports `{file}` or `%1` placeholders for signing providers that require positional substitution.
+This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image. Windows signing is skipped unless `WINDOWS_SIGN_COMMAND` is set. When it is set, `scripts/build-windows.ps1` signs the staged EUMDAC sidecar before packaging, refreshes the generated sidecar manifest to the signed sidecar hash, and injects a temporary Tauri `signCommand` config that calls `scripts/sign-windows.ps1`. The wrapper sets `WINDOWS_SIGN_FILE` to the file Tauri asked to sign, and also supports `{file}` or `%1` placeholders for signing providers that require positional substitution.
 
-The Windows package workflow runs on pull requests and manual dispatches. It and the release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
+The Windows build script verifies that the packaged EUMDAC sidecar hash matches the packaged manifest. When `WINDOWS_SIGN_COMMAND` is set, it also requires Authenticode-valid signatures on the app executable, packaged EUMDAC sidecar, MSI, and NSIS installer. The Windows package workflow runs on pull requests and manual dispatches. It and the release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
 
 ## Windows Release Checklist
 
@@ -181,7 +181,7 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has signing-command plumbing, stages a pinned EUMDAC sidecar before packaging, and includes MSI quiet install/uninstall smoke on the Windows runner. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, signed-sidecar verification, and SmartScreen QA are still required before public distribution.
+Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has signing-command plumbing, stages and manifest-checks a pinned EUMDAC sidecar before packaging, and includes MSI quiet install/uninstall smoke on the Windows runner. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, release-certificate sidecar verification, and SmartScreen QA are still required before public distribution.
 
 ## GitHub Release Workflow
 

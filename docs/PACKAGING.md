@@ -83,16 +83,18 @@ The script:
 
 - installs npm dependencies with `npm ci`;
 - runs full verification;
-- runs `tauri build --bundles app,dmg`;
-- applies ad-hoc signing to the `.app`;
+- stages the pinned EUMDAC sidecar with `npm run eumdac:prepare`;
+- runs `tauri build --config src-tauri/tauri.eumdac.generated.conf.json --bundles app,dmg`;
+- signs app executables, including the bundled EUMDAC sidecar, and refreshes the bundled sidecar manifest to the post-sign checksum;
 - verifies with `codesign --verify --deep --strict --verbose=2`;
 - rebuilds the DMG with the `.app` and an `/Applications` symlink;
+- when `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1` is enabled, notarizes and staples the app bundle and final signed DMG with `xcrun notarytool`/`stapler`;
 - verifies the DMG with `hdiutil verify`;
 - writes a `.sha256` checksum next to the DMG.
 
 The `macOS package` GitHub workflow runs this script on `macos-latest` for pull requests and manual dispatches. It uploads `macos-dmg` and `macos-sha256sum` artifacts for private review and does not bypass the public-release signing/notarization requirements below.
 
-Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It is suitable for private review, not public distribution.
+Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It stages the pinned EUMDAC sidecar for the current build architecture and is suitable for private review, not public distribution.
 
 ## macOS Public Release Checklist
 
@@ -121,9 +123,8 @@ spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg
 Known current macOS public-release gaps:
 
 - Developer ID certificate import is wired for CI, but no certificate secret is configured;
-- notarization credential plumbing is wired for Apple ID/app-password or App Store Connect API key, but no credential secrets are configured;
-- no stapled ticket;
-- no signed EUMDAC sidecar;
+- notarization submission/stapling is wired for Apple ID/app-password, App Store Connect API key, or a stored notary keychain profile, but no credential secrets are configured;
+- release-certificate EUMDAC sidecar signing/notarization still needs validation on a configured Apple Developer account;
 - no Intel/universal build validation.
 
 ## Windows Build
@@ -180,7 +181,7 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has signing-command plumbing, and includes MSI quiet install/uninstall smoke on the Windows runner. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, and SmartScreen QA are still required before public distribution.
+Current Windows status remains: CI has produced MSI/NSIS/checksum artifacts, has signing-command plumbing, stages a pinned EUMDAC sidecar before packaging, and includes MSI quiet install/uninstall smoke on the Windows runner. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, signed-sidecar verification, and SmartScreen QA are still required before public distribution.
 
 ## GitHub Release Workflow
 
@@ -211,29 +212,40 @@ eumdac
 eumdac.exe
 eumdac-cli
 eumdac-cli.exe
+eumdac-aarch64-apple-darwin
+eumdac-x86_64-apple-darwin
+eumdac-x86_64-pc-windows-msvc.exe
 ```
 
-next to the packaged executable.
+next to the packaged executable or in the Tauri resource directory.
 
-For production:
+Packaging scripts run `npm run eumdac:prepare` before native Tauri packaging. That script currently pins EUMDAC 3.1.1 from the official EUMETSAT GitLab release assets:
+
+| Target | Archive SHA256 | Binary SHA256 |
+| --- | --- | --- |
+| macOS arm64 | `200fb9ece8d790f1314b1ba08a03009b19836764d5312077f5ff18f34774cd3a` | `09cff6055e4c590fd890d1dc9c93ca32e7037552536ba908b4f7b5c90a2150a2` |
+| macOS x86_64 | `ca3f0bbba67003bb2fd91dcce90b7961543bb5b2f312ce882eb6094858d466ca` | `e969beeb3d7c22b6149696b08add6032078b1472baf5afc46a366e0710f035d2` |
+| Windows x86_64 | `844f16dc63accd34e1b013afbbaa6418f40ff06f852901aa25478a46b59eb80b` | `cf3cde0fd3dc2c57c51996783b8bc53418efa52bc5282fbbadec11f4310613f3` |
+
+For a production sidecar update:
 
 1. Choose the exact EUMDAC release and source.
 2. Record version, checksum, source URL, and license.
-3. Place platform binaries under `src-tauri/binaries/` using Tauri's target-triple naming, for example `src-tauri/binaries/eumdac-aarch64-apple-darwin` or `src-tauri/binaries/eumdac-x86_64-pc-windows-msvc.exe`.
-4. Add the base sidecar path to `src-tauri/tauri.conf.json > bundle.externalBin`, for example `"binaries/eumdac"`.
+3. Update `scripts/prepare-eumdac-sidecars.mjs` with the new archive URLs and SHA256 values.
+4. Run `npm run eumdac:prepare` on each target platform.
 5. Sign/notarize the sidecar with the app.
 6. Validate auth flow with real `eumetsat_consumer_key` and `eumetsat_consumer_secret`.
 7. Validate these CLI shapes against the bundled EUMDAC version:
 
 ```text
 eumdac set-credentials <consumer_key> <consumer_secret>
-eumdac search -c <collection> -s <start> -e <end> --bbox <v1> <v2> <v3> <v4> --limit <n>
+eumdac search -c <collection> -s <start> -e <end> --bbox <west> <south> <east> <north> --limit <n>
 eumdac download -c <collection> -p <product> -o <output_dir>
 ```
 
 Important: the app reads both EUMETSAT keychain slots and syncs them to EUMDAC immediately before search/download using an app-scoped EUMDAC config environment. Confirm this behavior against the exact sidecar binary. Keep secrets out of logs and review whether EUMDAC persists credentials in any sidecar-managed config file.
 
-Sidecar checksum trust is enforced by a manifest placed next to the packaged executable:
+Sidecar checksum trust is enforced by a manifest placed next to the packaged executable or bundled as a Tauri resource:
 
 ```json
 {
@@ -249,7 +261,7 @@ Sidecar checksum trust is enforced by a manifest placed next to the packaged exe
 }
 ```
 
-Use `eumdac.exe` as the `name` on Windows when that is the packaged file name. Search/download commands reject an unmanifested or checksum-mismatched sidecar. Local development can bypass that gate only with `SATELLITE_ALLOW_UNVERIFIED_EUMDAC=1`.
+Use `eumdac.exe` or `eumdac-x86_64-pc-windows-msvc.exe` as the `name` on Windows when that is the packaged file name. Search/download commands reject an unmanifested or checksum-mismatched sidecar. Local development can bypass that gate only with `SATELLITE_ALLOW_UNVERIFIED_EUMDAC=1`.
 
 ## Artifact Handoff
 

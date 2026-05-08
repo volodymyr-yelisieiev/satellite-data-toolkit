@@ -9,8 +9,8 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 - Current package status: macOS and Windows packaging scripts are configured with checksums; manual macOS DMG and Windows MSI/NSIS CI packaging workflows are configured, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
 - Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, Dependabot monitors npm, Cargo, and GitHub Actions dependencies, and `main` is protected by required CI checks.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
-- Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
-- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
+- Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation, and checksum-gated EUMDAC sidecar execution are implemented.
+- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, signed/notarized EUMDAC sidecar release validation, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
 
 ## Feature Status
 
@@ -24,7 +24,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 | PV Local Estimate | Implemented approximate | Uses normalized NASA POWER irradiance with explicit assumptions and missing-record accounting. |
 | PVWatts/NLR | Implemented, needs key QA | Uses `developer.nlr.gov` endpoint and stored `nlr_pvwatts_key`; live validation requires a real key. |
 | NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band and uses explicit or input `GDAL_NODATA` metadata. |
-| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. EUMDAC binary still must be bundled/signed and live QA requires real credentials. |
+| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. Packaging scripts stage pinned EUMDAC 3.1.1 standalone binaries with checksum manifests; signed sidecar QA and live credential validation are still required. |
 | Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, EUMDAC process errors redact stored secrets, and RustSec audit is wired into CI/release. Signed sidecars are still required before public release. |
 
 ## Included Workflows
@@ -89,7 +89,7 @@ eumdac-cli
 eumdac-cli.exe
 ```
 
-next to the packaged executable. The backend computes the sidecar SHA256 and only trusts it when a matching entry exists in `eumdac-sidecar-manifest.json` or `eumdac-sidecars.json` next to the executable. Production packaging should place platform-specific EUMDAC binaries under `src-tauri/binaries/`, add them to `src-tauri/tauri.conf.json > bundle.externalBin`, record checksum/license/source in the manifest, and sign/notarize them with the app.
+next to the packaged executable or in the Tauri resource directory. The backend computes the sidecar SHA256 and only trusts it when a matching entry exists in `eumdac-sidecar-manifest.json` or `eumdac-sidecars.json` next to the executable or in bundled resources. Packaging scripts run `npm run eumdac:prepare`, which downloads the pinned EUMDAC 3.1.1 standalone binary for the build platform, verifies archive and binary SHA256 values, stages the Tauri `externalBin` input, and writes the sidecar manifest. Public release signing/notarization must still cover the staged sidecar.
 
 EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Process errors are redacted before being returned to the UI.
 

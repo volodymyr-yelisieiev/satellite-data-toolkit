@@ -73,8 +73,9 @@ foreach ($stalePath in $staleArtifactPaths) {
 
 Invoke-CheckedCommand -Command "npm" -Arguments @("ci")
 Invoke-CheckedCommand -Command "npm" -Arguments @("run", "verify")
+Invoke-CheckedCommand -Command "npm" -Arguments @("run", "eumdac:prepare")
 
-$tauriBuildArgs = @("run", "tauri:build", "--", "--bundles", "msi,nsis")
+$tauriBuildArgs = @("run", "tauri:build", "--", "--config", "src-tauri\tauri.eumdac.generated.conf.json", "--bundles", "msi,nsis")
 if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGN_COMMAND)) {
   $signScript = (Resolve-Path "scripts\sign-windows.ps1").Path.Replace("\", "\\")
   $signConfigPath = "target\windows-signing.tauri.conf.json"

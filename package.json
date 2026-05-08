@@ -15,6 +15,7 @@
     "test": "vitest --run",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
+    "eumdac:prepare": "node scripts/prepare-eumdac-sidecars.mjs",
     "visual:smoke": "node scripts/visual-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "verify": "node scripts/verify.mjs",

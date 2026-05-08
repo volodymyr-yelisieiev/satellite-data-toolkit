@@ -22,7 +22,15 @@ const KEYCHAIN_SERVICE: &str = "Satellite Data Toolkit";
 const MAX_DATASET_RECORDS: usize = 120_000;
 const MAX_DATASET_JSON_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SAVED_NAME_LEN: usize = 160;
-const EUMDAC_SIDECAR_NAMES: &[&str] = &["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"];
+const EUMDAC_SIDECAR_NAMES: &[&str] = &[
+    "eumdac",
+    "eumdac.exe",
+    "eumdac-cli",
+    "eumdac-cli.exe",
+    "eumdac-aarch64-apple-darwin",
+    "eumdac-x86_64-apple-darwin",
+    "eumdac-x86_64-pc-windows-msvc.exe",
+];
 const EUMDAC_MANIFEST_NAMES: &[&str] = &["eumdac-sidecar-manifest.json", "eumdac-sidecars.json"];
 
 #[derive(Debug, Serialize)]
@@ -293,7 +301,7 @@ fn delete_api_key(name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
+async fn test_api_key(app: AppHandle, name: String) -> Result<CredentialTestResult, String> {
     validate_secret_name(&name)?;
 
     if name == "nlr_pvwatts_key" {
@@ -337,7 +345,7 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
     let key_present = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
     let secret_present =
         get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
-    let sidecar_status = eumdac_sidecar_status()?;
+    let sidecar_status = eumdac_sidecar_status(&app)?;
     Ok(evaluate_eumetsat_credential_status(
         name,
         key_present,
@@ -348,19 +356,19 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
 }
 
 #[tauri::command]
-fn check_eumdac_sidecar() -> Result<bool, String> {
-    let status = eumdac_sidecar_status()?;
+fn check_eumdac_sidecar(app: AppHandle) -> Result<bool, String> {
+    let status = eumdac_sidecar_status(&app)?;
     Ok(status.trusted || (status.found && allow_unverified_eumdac_sidecar()))
 }
 
 #[tauri::command]
-fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
-    eumdac_sidecar_status()
+fn get_eumdac_sidecar_status(app: AppHandle) -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status(&app)
 }
 
 #[tauri::command]
 fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
-    let sidecar = trusted_eumdac_sidecar()?;
+    let sidecar = trusted_eumdac_sidecar(&app)?;
     validate_eumetsat_query(&query)?;
     sync_eumdac_credentials(&app, &sidecar)?;
     let limit = query.limit.clamp(1, 100).to_string();
@@ -401,7 +409,7 @@ fn download_eumetsat_product(
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
-    let sidecar = trusted_eumdac_sidecar()?;
+    let sidecar = trusted_eumdac_sidecar(&app)?;
     sync_eumdac_credentials(&app, &sidecar)?;
     let clean_collection_id = collection_id.trim().to_string();
     let clean_product_id = product_id.trim().to_string();
@@ -729,23 +737,38 @@ fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<()
     Ok(())
 }
 
-fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    let Some(dir) = exe.parent() else {
-        return Ok(None);
-    };
-    Ok(EUMDAC_SIDECAR_NAMES
+fn find_eumdac_sidecar(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    let search_dirs = eumdac_search_dirs(app)?;
+    Ok(search_dirs
         .iter()
-        .map(|name| dir.join(name))
+        .flat_map(|dir| EUMDAC_SIDECAR_NAMES.iter().map(|name| dir.join(name)))
         .find(|path| is_executable_candidate(path)))
+}
+
+fn eumdac_search_dirs(app: &AppHandle) -> Result<Vec<PathBuf>, String> {
+    let mut dirs = Vec::new();
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    if let Some(dir) = exe.parent() {
+        push_unique_path(&mut dirs, dir.to_path_buf());
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut dirs, resource_dir);
+    }
+    Ok(dirs)
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 fn is_executable_candidate(path: &Path) -> bool {
     path.exists() && path.is_file()
 }
 
-fn trusted_eumdac_sidecar() -> Result<PathBuf, String> {
-    let status = eumdac_sidecar_status()?;
+fn trusted_eumdac_sidecar(app: &AppHandle) -> Result<PathBuf, String> {
+    let status = eumdac_sidecar_status(app)?;
     let Some(path) = status.path.as_deref().map(PathBuf::from) else {
         return Err(status.message);
     };
@@ -762,9 +785,10 @@ fn allow_unverified_eumdac_sidecar() -> bool {
         .unwrap_or(false)
 }
 
-fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
-    match find_eumdac_sidecar()? {
-        Some(path) => eumdac_sidecar_status_for_path(path),
+fn eumdac_sidecar_status(app: &AppHandle) -> Result<EumdacSidecarStatus, String> {
+    let manifest_dirs = eumdac_manifest_dirs(app);
+    match find_eumdac_sidecar(app)? {
+        Some(path) => eumdac_sidecar_status_for_path_with_manifest_dirs(path, &manifest_dirs),
         None => Ok(EumdacSidecarStatus {
             found: false,
             trusted: false,
@@ -780,19 +804,30 @@ fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
     }
 }
 
+#[cfg(test)]
 fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status_for_path_with_manifest_dirs(path, &[])
+}
+
+fn eumdac_manifest_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut dirs, resource_dir);
+    }
+    dirs
+}
+
+fn eumdac_sidecar_status_for_path_with_manifest_dirs(
+    path: PathBuf,
+    extra_manifest_dirs: &[PathBuf],
+) -> Result<EumdacSidecarStatus, String> {
     let sha256 = sha256_file(&path)?;
     let file_name = path
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("eumdac")
         .to_string();
-    let manifest_path = path.parent().and_then(|dir| {
-        EUMDAC_MANIFEST_NAMES
-            .iter()
-            .map(|name| dir.join(name))
-            .find(|candidate| candidate.exists() && candidate.is_file())
-    });
+    let manifest_path = find_eumdac_manifest_path(&path, extra_manifest_dirs);
     let Some(manifest_path) = manifest_path else {
         return Ok(EumdacSidecarStatus {
             found: true,
@@ -861,6 +896,19 @@ fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, 
             "EUMDAC sidecar checksum does not match manifest".to_string()
         },
     })
+}
+
+fn find_eumdac_manifest_path(path: &Path, extra_manifest_dirs: &[PathBuf]) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = path.parent() {
+        push_unique_path(&mut dirs, dir.to_path_buf());
+    }
+    for dir in extra_manifest_dirs {
+        push_unique_path(&mut dirs, dir.clone());
+    }
+    dirs.iter()
+        .flat_map(|dir| EUMDAC_MANIFEST_NAMES.iter().map(|name| dir.join(name)))
+        .find(|candidate| candidate.exists() && candidate.is_file())
 }
 
 fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, String> {
@@ -1201,6 +1249,41 @@ mod tests {
         assert_eq!(status.version.as_deref(), Some("3.0.0"));
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn trusts_eumdac_sidecar_when_manifest_is_in_resource_dir() {
+        let sidecar_dir = temp_dir_path("eumdac_sidecar_dir");
+        let resource_dir = temp_dir_path("eumdac_resource_dir");
+        fs::create_dir_all(&sidecar_dir).unwrap();
+        fs::create_dir_all(&resource_dir).unwrap();
+        let sidecar = sidecar_dir.join("eumdac");
+        fs::write(&sidecar, b"fake signed eumdac binary").unwrap();
+        let sha256 = sha256_file(&sidecar).unwrap();
+        fs::write(
+            resource_dir.join("eumdac-sidecar-manifest.json"),
+            format!(r#"{{"binaries":[{{"name":"eumdac","sha256":"{sha256}"}}]}}"#),
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path_with_manifest_dirs(
+            sidecar,
+            std::slice::from_ref(&resource_dir),
+        )
+        .unwrap();
+        assert!(status.found);
+        assert!(status.trusted);
+        let expected_manifest_path = resource_dir
+            .join("eumdac-sidecar-manifest.json")
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(
+            status.manifest_path.as_deref(),
+            Some(expected_manifest_path.as_str())
+        );
+
+        let _ = fs::remove_dir_all(sidecar_dir);
+        let _ = fs::remove_dir_all(resource_dir);
     }
 
     #[test]

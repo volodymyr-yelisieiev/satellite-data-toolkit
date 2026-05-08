@@ -1145,6 +1145,28 @@ mod tests {
         assert!(result.message.contains("sidecar is ready"));
     }
 
+    #[test]
+    fn sha256_file_returns_lowercase_hex_digest() {
+        let dir = temp_dir_path("sha256_format");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sample.bin");
+        fs::write(&path, b"abc").unwrap();
+
+        let digest = sha256_file(&path).unwrap();
+
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(digest.len(), 64);
+        assert!(digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit()));
+        assert_eq!(digest, digest.to_ascii_lowercase());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
     fn ready_eumdac_status() -> EumdacSidecarStatus {
         EumdacSidecarStatus {
             found: true,

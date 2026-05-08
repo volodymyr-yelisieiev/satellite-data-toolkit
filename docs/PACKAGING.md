@@ -115,7 +115,7 @@ spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg
 ```
 
 8. Test first launch from a clean user profile with no internet.
-9. Test NASA fetch, save, export, API slots, PV local estimate, and NDVI GeoTIFF samples with CRS/geotransform tags, `GDAL_NODATA`, and compressed TIFF input.
+9. Test NASA fetch, save, export, API slots, PV local estimate, and NDVI GeoTIFF samples with CRS/geotransform tags, `GDAL_NODATA`, compressed TIFF input, multi-strip layout, and real provider fixtures.
 10. Test app data removal and uninstall behavior.
 
 Known current macOS public-release gaps:

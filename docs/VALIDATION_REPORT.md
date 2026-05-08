@@ -64,7 +64,7 @@ Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumets
 
 Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25575059659` passed on `8e0411f` and uploaded `windows-msi` (6,883,556 bytes), `windows-nsis` (5,484,150 bytes), `windows-sha256sums` (294 bytes), and `windows-msi-smoke-logs` (22,453 bytes) artifacts after the unified full verify preflight, optional signing-command no-op path, and MSI quiet install/uninstall smoke.
 
-Remaining external blockers are unchanged except for the NDVI metadata gap, which is now locally closed for common GeoTIFF tags and Deflate-compressed TIFF inputs: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and broader real-world NDVI GeoTIFF fixture QA.
+Remaining external blockers are unchanged except for the NDVI metadata/compression gap, which is now locally closed for common GeoTIFF tags, Deflate-compressed TIFF inputs, LZW-compressed TIFF inputs, PackBits-compressed TIFF inputs, and multi-strip TIFF layouts: Windows install/uninstall QA, public macOS Developer ID signing/notarization/stapling, signed bundled EUMDAC binaries, live EUMETSAT/PVWatts validation with real credentials, and real-world provider NDVI GeoTIFF fixture QA.
 
 ## Executive Status
 
@@ -79,7 +79,7 @@ Remaining external blockers are unchanged except for the NDVI metadata gap, whic
 | Repository maintenance | Baseline+ | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit, weekly Dependabot update policy, vulnerability alerts, automated security fixes, and required-check branch protection including macOS DMG plus Windows installer packaging are configured. |
 | EUMETSAT | Partial | Sidecar command wiring and checksum-manifest trust gate exist, but no EUMDAC sidecar/credentials were available for live QA. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
-| NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, and Deflate-compressed TIFF inputs are covered in the pure-Rust path. |
+| NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, Deflate/LZW/PackBits-compressed TIFF inputs, and multi-strip layouts are covered in the pure-Rust path. |
 
 ## Subagent Audit Summary
 
@@ -263,7 +263,7 @@ Viewport checks:
 - Public macOS Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper acceptance.
 - EUMETSAT live product search/download because no bundled sidecar and test credentials were available.
 - PVWatts/NLR live API result because no API key was available.
-- Broader NDVI fixture coverage for tiled and multi-provider GeoTIFFs beyond the local metadata/compression preservation tests.
+- Real-world NDVI fixture coverage for tiled and multi-provider GeoTIFFs beyond the local metadata/compression/layout preservation tests.
 
 ## Release Recommendation
 
@@ -275,4 +275,4 @@ Do not present it as a public cross-platform release until:
 - macOS signing/notarization is configured;
 - EUMDAC sidecars are bundled and signed;
 - EUMETSAT/PVWatts live credentials are tested;
-- Broader NDVI GeoTIFF fixture QA is completed for the target satellite providers.
+- NDVI GeoTIFF fixture QA is completed for the target satellite providers.

@@ -10,7 +10,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 - Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, Dependabot monitors npm, Cargo, and GitHub Actions dependencies, and `main` is protected by required CI checks.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
-- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
+- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and real provider GeoTIFF fixture QA for NDVI.
 
 ## Feature Status
 
@@ -23,7 +23,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 | API Slots | Implemented base | Stores credentials in OS keychain under service `Satellite Data Toolkit`; no secrets are written to SQLite or logs. |
 | PV Local Estimate | Implemented approximate | Uses normalized NASA POWER irradiance with explicit assumptions and missing-record accounting. |
 | PVWatts/NLR | Implemented, needs key QA | Uses `developer.nlr.gov` endpoint and stored `nlr_pvwatts_key`; live validation requires a real key. |
-| NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band and uses explicit or input `GDAL_NODATA` metadata. |
+| NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band, uses explicit or input `GDAL_NODATA` metadata, and has automated coverage for Deflate, LZW, PackBits, and multi-strip TIFF layouts. |
 | EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. EUMDAC binary still must be bundled/signed and live QA requires real credentials. |
 | Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, EUMDAC process errors redact stored secrets, and RustSec audit is wired into CI/release. Signed sidecars are still required before public release. |
 
@@ -69,7 +69,7 @@ The NDVI screen accepts:
 - red/NIR scale factors;
 - explicit nodata value.
 
-Current NDVI output is a Float32 TIFF with NDVI values from `(NIR - Red) / (NIR + Red)`. It handles zero denominators, nodata, scale factors, mismatched dimensions, and TIFF read/write tests. The Rust path preserves common GeoTIFF CRS/geotransform tags from the Red band, including model scale/tiepoint/transformation tags, GeoKey directory tags, Geo ASCII/double parameters, and `GDAL_NODATA`.
+Current NDVI output is a Float32 TIFF with NDVI values from `(NIR - Red) / (NIR + Red)`. It handles zero denominators, nodata, scale factors, mismatched dimensions, and TIFF read/write tests across uncompressed, Deflate, LZW, PackBits, and multi-strip layouts. The Rust path preserves common GeoTIFF CRS/geotransform tags from the Red band, including model scale/tiepoint/transformation tags, GeoKey directory tags, Geo ASCII/double parameters, and `GDAL_NODATA`.
 
 ### EUMETSAT
 
@@ -274,7 +274,7 @@ It intentionally excludes heavy/generated/local files:
 - Bundled, signed, checksum-verified EUMDAC sidecar per platform.
 - Live EUMETSAT auth/search/download QA with real credentials and the exact bundled sidecar.
 - Live PVWatts/NLR QA with real API key.
-- Broader NDVI QA with real-world tiled and multi-provider GeoTIFF fixtures.
+- NDVI QA with real-world tiled and multi-provider GeoTIFF fixtures.
 
 ## Troubleshooting
 

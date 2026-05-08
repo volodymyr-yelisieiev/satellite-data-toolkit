@@ -1031,35 +1031,60 @@ mod tests {
 
     #[test]
     fn csv_escapes_values_and_preserves_raw_timestamp() {
-        let dataset = PowerDataset {
-            request: PowerRequest {
-                latitude: 0.0,
-                longitude: 0.0,
-                start_date: "2024-05-01".to_string(),
-                end_date: "2024-05-01".to_string(),
-                parameters: vec!["A,B".to_string()],
-                temporal: "daily".to_string(),
-                community: "RE".to_string(),
-                time_standard: "LST".to_string(),
-            },
-            records: vec![PowerRecord {
-                raw_timestamp: "20240501".to_string(),
-                timestamp: "2024-05-01".to_string(),
-                values: BTreeMap::from([("A,B".to_string(), Some(1.25))]),
-            }],
-            units: BTreeMap::new(),
-            long_names: BTreeMap::new(),
-            status_code: 200,
-            api_version: "test".to_string(),
-            time_standard: "LST".to_string(),
-            fill_value: -999.0,
-            data_time_seconds: 0.0,
-            process_time_seconds: 0.0,
-            fetched_at: "now".to_string(),
-        };
+        let dataset = test_dataset(vec!["A,B".to_string()]);
         let csv = dataset_to_csv(&dataset);
         assert!(csv.contains("timestamp,raw_timestamp,\"A,B\""));
         assert!(csv.contains("2024-05-01,20240501,1.25"));
+    }
+
+    #[test]
+    fn csv_escapes_quotes_newlines_and_missing_values() {
+        let parameters = vec![
+            "quote\"param".to_string(),
+            "line\nparam".to_string(),
+            "missing".to_string(),
+        ];
+        let mut dataset = test_dataset(parameters);
+        dataset.records[0]
+            .values
+            .insert("quote\"param".to_string(), Some(2.5));
+        dataset.records[0]
+            .values
+            .insert("line\nparam".to_string(), None);
+        dataset.records[0].values.remove("missing");
+
+        let csv = dataset_to_csv(&dataset);
+
+        assert!(csv.contains("timestamp,raw_timestamp,\"quote\"\"param\",\"line\nparam\",missing"));
+        assert!(csv.contains("2024-05-01,20240501,2.5,,"));
+    }
+
+    #[test]
+    fn validates_saved_dataset_storage_limits() {
+        let mut oversized = test_dataset(vec!["ALLSKY_SFC_SW_DWN".to_string()]);
+        let record = oversized.records[0].clone();
+        oversized.records = vec![record; MAX_DATASET_RECORDS + 1];
+
+        let error = validate_dataset_for_storage(&oversized).unwrap_err();
+        assert!(error.contains("dataset has too many records"));
+
+        let valid = test_dataset(vec!["ALLSKY_SFC_SW_DWN".to_string()]);
+        assert!(validate_dataset_for_storage(&valid).is_ok());
+    }
+
+    #[test]
+    fn trims_and_bounds_saved_dataset_names() {
+        assert_eq!(
+            validate_saved_name("  NASA May sample  ").unwrap(),
+            "NASA May sample"
+        );
+        assert_eq!(
+            validate_saved_name("   ").unwrap_err(),
+            "dataset name is required"
+        );
+        assert!(validate_saved_name(&"x".repeat(MAX_SAVED_NAME_LEN + 1))
+            .unwrap_err()
+            .contains("dataset name is too long"));
     }
 
     #[test]
@@ -1233,5 +1258,38 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn test_dataset(parameters: Vec<String>) -> PowerDataset {
+        let values = parameters
+            .iter()
+            .map(|parameter| (parameter.clone(), Some(1.25)))
+            .collect::<BTreeMap<_, _>>();
+        PowerDataset {
+            request: PowerRequest {
+                latitude: 0.0,
+                longitude: 0.0,
+                start_date: "2024-05-01".to_string(),
+                end_date: "2024-05-01".to_string(),
+                parameters,
+                temporal: "daily".to_string(),
+                community: "RE".to_string(),
+                time_standard: "LST".to_string(),
+            },
+            records: vec![PowerRecord {
+                raw_timestamp: "20240501".to_string(),
+                timestamp: "2024-05-01".to_string(),
+                values,
+            }],
+            units: BTreeMap::new(),
+            long_names: BTreeMap::new(),
+            status_code: 200,
+            api_version: "test".to_string(),
+            time_standard: "LST".to_string(),
+            fill_value: -999.0,
+            data_time_seconds: 0.0,
+            process_time_seconds: 0.0,
+            fetched_at: "now".to_string(),
+        }
     }
 }

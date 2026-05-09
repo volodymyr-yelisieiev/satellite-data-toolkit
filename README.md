@@ -256,7 +256,7 @@ Security reports should follow `SECURITY.md`. Do not disclose exploit details or
 
 The `main` branch protection still enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions. Required status checks are temporarily removed while GitHub Actions is disabled; restore them when hosted or self-hosted checks can pass without quota failures.
 
-Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
+Important repository state as of May 9, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line uses `v*` tags, and `v2.1.1` is currently marked as Latest to avoid sending end users to the Rust-only artifact line.
 
 ## Review ZIP Contents
 

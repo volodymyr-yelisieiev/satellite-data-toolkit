@@ -11,6 +11,12 @@ export type Screen =
 
 export type Temporal = "daily" | "hourly";
 
+export interface AppSettings {
+  startupScreen: Screen;
+  previewRows: number;
+  requestTimeoutSeconds: number;
+}
+
 export interface PowerRequest {
   latitude: number;
   longitude: number;
@@ -157,6 +163,7 @@ export interface PvWattsRequest {
   tiltDegrees: number;
   azimuthDegrees: number;
   lossesPercent: number;
+  inverterEfficiencyPercent: number;
   moduleType: number;
   arrayType: number;
   timeframe: string;

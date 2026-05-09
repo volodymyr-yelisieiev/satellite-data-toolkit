@@ -12,10 +12,14 @@
     "dev": "vite --host 127.0.0.1",
     "version:check": "node scripts/check-version-consistency.mjs",
     "security:tauri-surface": "node scripts/check-tauri-surface.mjs",
+    "security:npm-prod": "npm audit --omit=dev",
+    "security:npm-build-chain": "npm audit --audit-level=high",
     "test": "vitest --run",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
+    "eumdac:prepare": "node scripts/prepare-eumdac-sidecars.mjs",
     "visual:smoke": "node scripts/visual-smoke.mjs",
+    "workflow:smoke": "node scripts/workflow-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "verify": "node scripts/verify.mjs",
     "tauri": "tauri",
@@ -30,13 +34,13 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.1",
-    "@types/node": "25.6.0",
+    "@types/node": "25.6.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.1",
     "playwright": "^1.59.1",
     "typescript": "6.0.3",
-    "vite": "8.0.10",
+    "vite": "8.0.11",
     "vitest": "4.1.5"
   }
 }

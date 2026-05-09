@@ -7,10 +7,10 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 ## Reviewer Snapshot
 
 - Current package status: macOS and Windows packaging scripts are configured with checksums; manual macOS DMG and Windows MSI/NSIS CI packaging workflows are configured, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
-- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, `SECURITY.md` defines vulnerability reporting, Dependabot monitors npm, Cargo, and GitHub Actions dependencies, and `main` is protected by required CI checks.
+- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, and `SECURITY.md` defines vulnerability reporting. GitHub-hosted workflows and Dependabot automation are currently paused to avoid private-repository Actions quota failures and notification spam; local `npm run verify` is the active gate until a free hosted, public, or self-hosted runner path is available.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
-- Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, and pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation are implemented.
-- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, bundled/signed EUMDAC sidecar, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
+- Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation, and checksum-gated EUMDAC sidecar execution are implemented.
+- Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, signed/notarized EUMDAC sidecar release validation, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
 
 ## Feature Status
 
@@ -23,8 +23,8 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 | API Slots | Implemented base | Stores credentials in OS keychain under service `Satellite Data Toolkit`; no secrets are written to SQLite or logs. |
 | PV Local Estimate | Implemented approximate | Uses normalized NASA POWER irradiance with explicit assumptions and missing-record accounting. |
 | PVWatts/NLR | Implemented, needs key QA | Uses `developer.nlr.gov` endpoint and stored `nlr_pvwatts_key`; live validation requires a real key. |
-| NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band and uses explicit or input `GDAL_NODATA` metadata. |
-| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. EUMDAC binary still must be bundled/signed and live QA requires real credentials. |
+| NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band, uses explicit or input `GDAL_NODATA` metadata, and has automated coverage for Deflate, LZW, PackBits, and multi-strip TIFF layouts. |
+| EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. Packaging scripts stage pinned EUMDAC 3.1.1 standalone binaries with checksum manifests; signed sidecar QA and live credential validation are still required. |
 | Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, EUMDAC process errors redact stored secrets, and RustSec audit is wired into CI/release. Signed sidecars are still required before public release. |
 
 ## Included Workflows
@@ -69,7 +69,7 @@ The NDVI screen accepts:
 - red/NIR scale factors;
 - explicit nodata value.
 
-Current NDVI output is a Float32 TIFF with NDVI values from `(NIR - Red) / (NIR + Red)`. It handles zero denominators, nodata, scale factors, mismatched dimensions, and TIFF read/write tests. The Rust path preserves common GeoTIFF CRS/geotransform tags from the Red band, including model scale/tiepoint/transformation tags, GeoKey directory tags, Geo ASCII/double parameters, and `GDAL_NODATA`.
+Current NDVI output is a Float32 TIFF with NDVI values from `(NIR - Red) / (NIR + Red)`. It handles zero denominators, nodata, scale factors, mismatched dimensions, and TIFF read/write tests across uncompressed, Deflate, LZW, PackBits, and multi-strip layouts. The Rust path preserves common GeoTIFF CRS/geotransform tags from the Red band, including model scale/tiepoint/transformation tags, GeoKey directory tags, Geo ASCII/double parameters, and `GDAL_NODATA`.
 
 ### EUMETSAT
 
@@ -89,9 +89,9 @@ eumdac-cli
 eumdac-cli.exe
 ```
 
-next to the packaged executable. The backend computes the sidecar SHA256 and only trusts it when a matching entry exists in `eumdac-sidecar-manifest.json` or `eumdac-sidecars.json` next to the executable. Production packaging should place platform-specific EUMDAC binaries under `src-tauri/binaries/`, add them to `src-tauri/tauri.conf.json > bundle.externalBin`, record checksum/license/source in the manifest, and sign/notarize them with the app.
+next to the packaged executable or in the Tauri resource directory. The backend computes the sidecar SHA256 and only trusts it when a matching entry exists in `eumdac-sidecar-manifest.json` or `eumdac-sidecars.json` next to the executable or in bundled resources. Packaging scripts run `npm run eumdac:prepare`, which downloads the pinned EUMDAC 3.1.1 standalone binary for the build platform, verifies archive and binary SHA256 values, stages the Tauri `externalBin` input, and writes the sidecar manifest. Public release signing/notarization must still cover the staged sidecar.
 
-EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Process errors are redacted before being returned to the UI.
+EUMDAC 3.x exposes `set-credentials`, `search`, and `download` commands. Before search/download, the app reads `eumetsat_consumer_key` and `eumetsat_consumer_secret` from the OS keychain and syncs them into an app-scoped EUMDAC config environment for the sidecar process. Search bounding boxes are sent as `W,S,E,N` coordinates in EPSG:4326 decimal degrees. Process errors are redacted before being returned to the UI.
 
 ## Credentials
 
@@ -185,7 +185,10 @@ This currently runs:
 - `cargo test --workspace --locked`
 - `cargo check --workspace --locked`
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- `npm audit --omit=dev`
+- `npm run security:npm-prod`
+- `npm run security:npm-build-chain`
+
+Npm security policy is split by release risk: production dependencies must have zero known audit findings, while the full dependency tree including dev/build tooling blocks release on high or critical findings.
 
 ## Build macOS
 
@@ -202,7 +205,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-The `macOS package` workflow runs the same script on `macos-latest` for pull requests and manual dispatches, then uploads the DMG plus checksum for private review builds.
+The `macOS package` workflow file runs the same script on `macos-latest` for pull requests and manual dispatches when GitHub Actions is enabled. It is currently disabled manually while private-repository runner quota is exhausted.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -222,11 +225,21 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The Windows package workflow runs on pull requests and manual dispatches, and the release workflow also runs a CI-level MSI silent install/uninstall smoke on the Windows runner. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The Windows package and release workflow files run installer builds and CI-level MSI silent install/uninstall smoke when GitHub Actions is enabled. They are currently disabled manually while private-repository runner quota is exhausted. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## GitHub CI/CD
 
-The default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts on pull requests and manual dispatches. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+The workflow files are preserved for CI, packaging, and release publishing, but repository workflows are currently `disabled_manually` to stop GitHub-hosted runner failures caused by private-repository billing/spending-limit state. While disabled, the repository uses local verification as the source of evidence:
+
+```bash
+npm run verify
+npm run visual:smoke
+./scripts/build-macos.sh
+```
+
+Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for the Windows packaging gate. Re-enable GitHub Actions only after a free path is available, such as restored free quota, a public repository, or self-hosted runners for the required OS matrix.
+
+When enabled, the default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts on pull requests and manual dispatches. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
 
 ```text
 macOS DMG
@@ -237,11 +250,11 @@ SHA256SUMS.txt
 
 and uploads those assets to the matching GitHub release.
 
-Dependabot is configured in `.github/dependabot.yml` for weekly npm, Cargo, and GitHub Actions update pull requests, with related dependency families grouped to keep maintenance reviewable. Dependabot vulnerability alerts and automated security fixes are enabled for the GitHub repository.
+Dependabot is configured in `.github/dependabot.yml`, but version-update PRs are paused with `open-pull-requests-limit: 0` while Actions is disabled. Dependabot automated security fixes are also disabled during this quota-control period.
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
 
-The `main` branch is protected with up-to-date required checks for RustSec audit, macOS DMG packaging, Windows installer packaging, Ubuntu/macOS/Windows verify, and visual smoke. Branch protection also enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions.
+The `main` branch protection still enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions. Required status checks are temporarily removed while GitHub Actions is disabled; restore them when hosted or self-hosted checks can pass without quota failures.
 
 Important repository state as of May 8, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line should use `v*` tags; the next Tauri release should be published as latest to avoid confusing end users.
 
@@ -274,7 +287,7 @@ It intentionally excludes heavy/generated/local files:
 - Bundled, signed, checksum-verified EUMDAC sidecar per platform.
 - Live EUMETSAT auth/search/download QA with real credentials and the exact bundled sidecar.
 - Live PVWatts/NLR QA with real API key.
-- Broader NDVI QA with real-world tiled and multi-provider GeoTIFF fixtures.
+- NDVI QA with real-world tiled and multi-provider GeoTIFF fixtures.
 
 ## Troubleshooting
 

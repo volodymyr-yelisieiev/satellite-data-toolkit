@@ -5,6 +5,9 @@
 /dist/
 /target/
 /src-tauri/target/
+/src-tauri/binaries/
+/src-tauri/resources/eumdac-sidecar-manifest.json
+/src-tauri/tauri.eumdac.generated.conf.json
 /satellite_data_toolkit_rust/
 /.playwright-cli/
 /output/

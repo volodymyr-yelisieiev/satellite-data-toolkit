@@ -503,6 +503,63 @@ mod tests {
         let _ = std::fs::remove_file(output_path);
     }
 
+    #[test]
+    fn run_ndvi_reads_multi_strip_lzw_and_packbits_tiff_inputs() {
+        let red_path = temp_tiff_path("red_lzw_multistrip");
+        let nir_path = temp_tiff_path("nir_packbits_multistrip");
+        let output_path = temp_tiff_path("ndvi_multistrip_compressed");
+
+        write_test_tiff_with_layout(
+            &red_path,
+            3,
+            2,
+            &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            None,
+            Compression::Lzw,
+            Some(1),
+        );
+        write_test_tiff_with_layout(
+            &nir_path,
+            3,
+            2,
+            &[0.3, 0.6, 0.9, 0.8, 1.0, 1.2],
+            None,
+            Compression::Packbits,
+            Some(2),
+        );
+
+        let result = run_ndvi(&NdviJob {
+            red_path: red_path.to_string_lossy().to_string(),
+            nir_path: nir_path.to_string_lossy().to_string(),
+            output_path: output_path.to_string_lossy().to_string(),
+            red_scale: 1.0,
+            nir_scale: 1.0,
+            nodata_value: None,
+        })
+        .unwrap();
+
+        assert_eq!(result.width, 3);
+        assert_eq!(result.height, 2);
+        assert_eq!(result.valid_pixel_count, 6);
+        assert_eq!(result.nodata_pixel_count, 0);
+        assert!((result.min.unwrap() - 0.33333334).abs() < 0.001);
+        assert!((result.max.unwrap() - 0.5).abs() < 0.001);
+
+        let file = File::open(&output_path).unwrap();
+        let mut decoder = Decoder::new(BufReader::new(file)).unwrap();
+        assert_eq!(decoder.dimensions().unwrap(), (3, 2));
+        let DecodingResult::F32(values) = decoder.read_image().unwrap() else {
+            panic!("expected Float32 NDVI output");
+        };
+        assert_eq!(values.len(), 6);
+        assert!((values[0] - 0.5).abs() < 0.001);
+        assert!((values[3] - 0.33333334).abs() < 0.001);
+
+        let _ = std::fs::remove_file(red_path);
+        let _ = std::fs::remove_file(nir_path);
+        let _ = std::fs::remove_file(output_path);
+    }
+
     struct TestGeoTags {
         model_pixel_scale: Vec<f64>,
         model_tiepoint: Vec<f64>,
@@ -520,11 +577,29 @@ mod tests {
         tags: Option<TestGeoTags>,
         compression: Compression,
     ) {
+        write_test_tiff_with_layout(path, 2, 1, values, tags, compression, None);
+    }
+
+    fn write_test_tiff_with_layout(
+        path: &Path,
+        width: u32,
+        height: u32,
+        values: &[f32],
+        tags: Option<TestGeoTags>,
+        compression: Compression,
+        rows_per_strip: Option<u32>,
+    ) {
+        assert_eq!(values.len(), width as usize * height as usize);
         let file = File::create(path).unwrap();
         let mut encoder = TiffEncoder::new(BufWriter::new(file))
             .unwrap()
             .with_compression(compression);
-        let mut image = encoder.new_image::<colortype::Gray32Float>(2, 1).unwrap();
+        let mut image = encoder
+            .new_image::<colortype::Gray32Float>(width, height)
+            .unwrap();
+        if let Some(rows_per_strip) = rows_per_strip {
+            image.rows_per_strip(rows_per_strip).unwrap();
+        }
         if let Some(tags) = tags {
             image
                 .encoder()

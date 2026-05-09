@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactUnit, formatNumber, initialRequest, toFiniteNumber } from "./domain";
+import { defaultAppSettings, compactUnit, formatNumber, initialRequest, normalizeAppSettings, toFiniteNumber } from "./domain";
 
 describe("domain helpers", () => {
   it("formats missing and numeric values consistently", () => {
@@ -24,5 +24,15 @@ describe("domain helpers", () => {
   it("keeps the default NASA POWER request aligned with table columns", () => {
     expect(initialRequest.parameters).toContain("ALLSKY_SFC_SW_DWN");
     expect(initialRequest.temporal).toBe("daily");
+  });
+
+  it("normalizes stored app settings", () => {
+    expect(normalizeAppSettings({ startupScreen: "pv", previewRows: 24, requestTimeoutSeconds: 120 })).toEqual({
+      startupScreen: "pv",
+      previewRows: 24,
+      requestTimeoutSeconds: 120,
+    });
+    expect(normalizeAppSettings({ startupScreen: "missing", previewRows: 999, requestTimeoutSeconds: 999 })).toEqual(defaultAppSettings);
+    expect(normalizeAppSettings(null)).toEqual(defaultAppSettings);
   });
 });

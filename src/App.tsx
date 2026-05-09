@@ -30,16 +30,22 @@ import {
   apiSlots,
   availableParams,
   compactUnit,
+  defaultAppSettings,
   errorMessage,
   formatNumber,
   initialRequest,
+  normalizeAppSettings,
+  previewRowOptions,
   quickExamples,
+  requestTimeoutOptions,
   timestamp,
   toFiniteNumber,
 } from "./domain";
 import type {
+  AppSettings,
   ActivityLogEntry,
   CredentialTestResult,
+  DownloadResult,
   EumetsatProduct,
   EumetsatQuery,
   EumdacSidecarStatus,
@@ -83,15 +89,42 @@ const powerTabs = [
   { id: "ndvi" as Screen, title: "NDVI CALCULATOR", icon: Leaf },
   { id: "pv" as Screen, title: "PV ESTIMATE", icon: BarChart3 },
 ];
+const workflowScreensWithActivity = new Set<Screen>(["power", "eumetsat", "ndvi", "pv", "saved", "api"]);
 
-function screenFromHash(): Screen {
-  if (typeof window === "undefined") return "power";
+const REPOSITORY_URL = "https://github.com/volodymyr-yelisieiev/satellite-data-toolkit";
+const RELEASES_URL = `${REPOSITORY_URL}/releases`;
+const POWER_API_DOCS_URL = "https://power.larc.nasa.gov/docs/services/api/";
+const TAURI_URL = "https://tauri.app/";
+const PVWATTS_DOCS_URL = "https://developer.nlr.gov/docs/solar/pvwatts/";
+
+const settingsStorageKey = "satellite-data-toolkit:settings:v1";
+
+function loadStoredSettings(): AppSettings {
+  if (typeof window === "undefined") return defaultAppSettings;
+  try {
+    return normalizeAppSettings(JSON.parse(window.localStorage.getItem(settingsStorageKey) ?? "null"));
+  } catch {
+    return defaultAppSettings;
+  }
+}
+
+function saveStoredSettings(settings: AppSettings) {
+  try {
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+  } catch {
+    // Browser privacy modes can deny localStorage; keep the in-memory settings.
+  }
+}
+
+function screenFromHash(fallback: Screen = "power"): Screen {
+  if (typeof window === "undefined") return fallback;
   const candidate = window.location.hash.replace(/^#/, "");
-  return navItems.some((item) => item.id === candidate) ? (candidate as Screen) : "power";
+  return navItems.some((item) => item.id === candidate) ? (candidate as Screen) : fallback;
 }
 
 function App() {
-  const [active, setActive] = useState<Screen>(screenFromHash);
+  const [settings, setSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [active, setActive] = useState<Screen>(() => screenFromHash(settings.startupScreen));
   const navListRef = useRef<HTMLElement | null>(null);
   const [request, setRequest] = useState<PowerRequest>(initialRequest);
   const [dataset, setDataset] = useState<PowerDataset | null>(null);
@@ -102,7 +135,7 @@ function App() {
     { time: timestamp(), message: "Application ready" },
     { time: timestamp(), message: "NASA POWER defaults loaded" },
   ]);
-  const [previewLimit, setPreviewLimit] = useState(12);
+  const [previewLimit, setPreviewLimit] = useState(settings.previewRows);
   const [lastExportPath, setLastExportPath] = useState("");
   const [pvCapacity, setPvCapacity] = useState(100);
   const [pvLosses, setPvLosses] = useState(14);
@@ -115,6 +148,13 @@ function App() {
   const [savedCount, setSavedCount] = useState(0);
 
   const tableColumns = useMemo(() => dataset?.request.parameters ?? request.parameters, [dataset, request.parameters]);
+  const shellStatus = useMemo(() => {
+    if (loading) return { label: "Fetching", tone: "busy" };
+    if (status === "error") return { label: "Needs attention", tone: "error" };
+    if (status === "success") return { label: "Data ready", tone: "success" };
+    return { label: "Ready", tone: "success" };
+  }, [loading, status]);
+  const showActivityLog = workflowScreensWithActivity.has(active);
 
   useEffect(() => {
     void refreshApiStatus();
@@ -123,11 +163,11 @@ function App() {
 
   useEffect(() => {
     function handleHashChange() {
-      setActive(screenFromHash());
+      setActive(screenFromHash(settings.startupScreen));
     }
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
+  }, [settings.startupScreen]);
 
   useEffect(() => {
     if (window.location.hash !== `#${active}`) {
@@ -140,6 +180,27 @@ function App() {
 
   function addLog(message: string) {
     setLogs((current) => [...current.slice(-80), { time: timestamp(), message }]);
+  }
+
+  function updateSettings(partial: Partial<AppSettings>) {
+    const next = normalizeAppSettings({ ...settings, ...partial });
+    setSettings(next);
+    saveStoredSettings(next);
+    if (next.previewRows !== settings.previewRows) {
+      setPreviewLimit(next.previewRows);
+    }
+    addLog("Application settings saved");
+  }
+
+  function resetSettings() {
+    setSettings(defaultAppSettings);
+    saveStoredSettings(defaultAppSettings);
+    setPreviewLimit(defaultAppSettings.previewRows);
+    addLog("Application settings reset");
+  }
+
+  function clearLogs() {
+    setLogs([{ time: timestamp(), message: "Activity log cleared" }]);
   }
 
   async function refreshSavedCount() {
@@ -173,10 +234,10 @@ function App() {
     setLoading(true);
     setStatus("idle");
     setError("");
-    setPreviewLimit(12);
+    setPreviewLimit(settings.previewRows);
     addLog("Sending request to NASA POWER API...");
     try {
-      const response = await fetchPowerDataset(request);
+      const response = await fetchPowerDataset(request, settings.requestTimeoutSeconds);
       setDataset(response);
       setStatus("success");
       addLog(`Response received successfully: ${response.records.length} records`);
@@ -238,17 +299,21 @@ function App() {
   async function handlePvWatts() {
     const source = dataset?.request ?? request;
     try {
-      const result = await estimatePvWatts({
-        latitude: source.latitude,
-        longitude: source.longitude,
-        systemCapacityKw: pvCapacity,
-        tiltDegrees: pvTilt,
-        azimuthDegrees: pvAzimuth,
-        lossesPercent: pvLosses,
-        moduleType: 0,
-        arrayType: 1,
-        timeframe: "monthly",
-      });
+      const result = await estimatePvWatts(
+        {
+          latitude: source.latitude,
+          longitude: source.longitude,
+          systemCapacityKw: pvCapacity,
+          tiltDegrees: pvTilt,
+          azimuthDegrees: pvAzimuth,
+          lossesPercent: pvLosses,
+          inverterEfficiencyPercent: pvInverter,
+          moduleType: 0,
+          arrayType: 1,
+          timeframe: "monthly",
+        },
+        settings.requestTimeoutSeconds,
+      );
       setPvWattsResult(result);
       addLog(`PVWatts/NLR estimate completed: ${result.acAnnualKwh.toFixed(2)} kWh annual AC`);
     } catch (err) {
@@ -305,9 +370,9 @@ function App() {
           })}
         </nav>
 
-        <div className="status-line">
+        <div className={`status-line ${shellStatus.tone}`}>
           <span className="pulse" />
-          <span>Ready</span>
+          <span>{shellStatus.label}</span>
         </div>
       </aside>
 
@@ -340,7 +405,6 @@ function App() {
               loading={loading}
               status={status}
               error={error}
-              logs={logs}
               previewLimit={previewLimit}
               lastExportPath={lastExportPath}
               updateRequest={updateRequest}
@@ -357,8 +421,7 @@ function App() {
               }}
               onExport={handleExport}
               onSave={handleSave}
-              onPreviewMore={() => setPreviewLimit((current) => current + 24)}
-              onClearLogs={() => setLogs([{ time: timestamp(), message: "Activity log cleared" }])}
+              onPreviewMore={() => setPreviewLimit((current) => current + settings.previewRows)}
             />
           )}
           {active === "eumetsat" && <EumetsatScreen addLog={addLog} />}
@@ -395,23 +458,30 @@ function App() {
             />
           )}
           {active === "api" && <ApiScreen apiStatus={apiStatus} refreshApiStatus={refreshApiStatus} addLog={addLog} />}
-          {active === "settings" && <SettingsScreen />}
+          {active === "settings" && (
+            <SettingsScreen
+              settings={settings}
+              onChange={updateSettings}
+              onReset={resetSettings}
+            />
+          )}
           {active === "about" && <AboutScreen />}
+          {showActivityLog && <ActivityLog logs={logs} onClear={clearLogs} />}
         </div>
 
         <footer className="footer">
-          <a href="https://github.com" target="_blank" rel="noreferrer">
+          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">
             <GitBranch size={16} />
             GitHub
           </a>
-          <a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">
+          <a href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">
             <FileJson size={16} />
             Documentation
           </a>
-          <button type="button" onClick={() => addLog("Updater is not configured for this local build")}>
+          <a href={RELEASES_URL} target="_blank" rel="noreferrer">
             <CloudDownload size={16} />
-            Check for Updates
-          </button>
+            Releases
+          </a>
         </footer>
       </section>
     </main>
@@ -425,7 +495,6 @@ function PowerScreen(props: {
   loading: boolean;
   status: "idle" | "success" | "error";
   error: string;
-  logs: ActivityLogEntry[];
   previewLimit: number;
   lastExportPath: string;
   updateRequest: <K extends keyof PowerRequest>(key: K, value: PowerRequest[K]) => void;
@@ -436,7 +505,6 @@ function PowerScreen(props: {
   onExport: (format: "csv" | "json") => void;
   onSave: () => void;
   onPreviewMore: () => void;
-  onClearLogs: () => void;
 }) {
   const visibleRecords = props.dataset?.records.slice(0, props.previewLimit) ?? [];
   return (
@@ -449,7 +517,7 @@ function PowerScreen(props: {
           <h1>NASA POWER</h1>
           <p>Access solar and meteorological data from NASA POWER API</p>
         </div>
-        <a className="doc-button" href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">
+        <a className="doc-button" href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">
           API Documentation
           <ExternalLink size={16} />
         </a>
@@ -621,8 +689,6 @@ function PowerScreen(props: {
           {props.lastExportPath && <p className="muted-result">Last export: {props.lastExportPath}</p>}
         </div>
       </section>
-
-      <ActivityLog logs={props.logs} onClear={props.onClearLogs} />
     </>
   );
 }
@@ -693,7 +759,7 @@ function DashboardTile(props: { icon: typeof Home; label: string; value: string;
 function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
   const [query, setQuery] = useState<EumetsatQuery>({
     collectionId: "EO:EUM:DAT:METOP:OSI-104",
-    bbox: "51.28,51.69,0.51,0.33",
+    bbox: "-0.51,51.28,0.33,51.69",
     startTime: "2024-11-10T08:00:00",
     endTime: "2024-11-10T09:00:00",
     limit: 20,
@@ -702,18 +768,31 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
   const [products, setProducts] = useState<EumetsatProduct[]>([]);
   const [outputDir, setOutputDir] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [busyAction, setBusyAction] = useState<"sidecar" | "search" | "download" | null>(null);
+  const isBusy = busyAction !== null;
 
   function update<K extends keyof EumetsatQuery>(key: K, value: EumetsatQuery[K]) {
     setQuery((current) => ({ ...current, [key]: value }));
   }
 
   async function checkSidecar() {
-    const status = await invoke<EumdacSidecarStatus>("get_eumdac_sidecar_status");
-    setSidecarStatus(status);
-    addLog(status.message);
+    setBusyAction("sidecar");
+    try {
+      const status = await invoke<EumdacSidecarStatus>("get_eumdac_sidecar_status");
+      setSidecarStatus(status);
+      addLog(status.message);
+    } catch (err) {
+      setSidecarStatus(null);
+      addLog(`EUMDAC sidecar check failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function searchProducts() {
+    setBusyAction("search");
+    setProducts([]);
+    setSelectedProduct("");
     try {
       const result = await invoke<{ products: EumetsatProduct[] }>("fetch_eumetsat_products", { query });
       setProducts(result.products);
@@ -721,15 +800,20 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
       addLog(`EUMETSAT search returned ${result.products.length} products`);
     } catch (err) {
       addLog(`EUMETSAT search failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
     }
   }
 
   async function downloadProduct() {
+    setBusyAction("download");
     try {
-      await invoke("download_eumetsat_product", { collectionId: query.collectionId, productId: selectedProduct, outputDir });
-      addLog(`EUMETSAT product download started: ${selectedProduct}`);
+      const result = await invoke<DownloadResult>("download_eumetsat_product", { collectionId: query.collectionId, productId: selectedProduct, outputDir });
+      addLog(`EUMETSAT product download completed: ${result.productId} -> ${result.outputDir}`);
     } catch (err) {
       addLog(`EUMETSAT download failed: ${errorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -752,7 +836,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
           <label>
             Bounding Box
-            <input value={query.bbox} onChange={(event) => update("bbox", event.target.value)} />
+            <input value={query.bbox} placeholder="W,S,E,N" onChange={(event) => update("bbox", event.target.value)} />
           </label>
           <label>
             Start Time
@@ -772,13 +856,13 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
           </label>
         </div>
         <div className="action-row left wrap">
-          <button className="secondary-action" type="button" onClick={checkSidecar}>
-            <Satellite size={18} />
-            Check Sidecar
+          <button className="secondary-action" type="button" onClick={checkSidecar} disabled={isBusy}>
+            {busyAction === "sidecar" ? <Loader2 className="spin" size={18} /> : <Satellite size={18} />}
+            {busyAction === "sidecar" ? "Checking" : "Check Sidecar"}
           </button>
-          <button className="primary-action" type="button" onClick={searchProducts}>
-            <Search size={18} />
-            Search Products
+          <button className="primary-action" type="button" onClick={searchProducts} disabled={isBusy}>
+            {busyAction === "search" ? <Loader2 className="spin" size={18} /> : <Search size={18} />}
+            {busyAction === "search" ? "Searching" : "Search Products"}
           </button>
           {sidecarStatus !== null && (
             <span className={sidecarStatus.trusted ? "status-badge success" : "status-badge error"}>
@@ -808,7 +892,7 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
                 <td>{product.id}</td>
                 <td>{product.title}</td>
                 <td>
-                  <button className="secondary-action compact" type="button" onClick={() => setSelectedProduct(product.id)}>
+                  <button className="secondary-action compact" type="button" onClick={() => setSelectedProduct(product.id)} disabled={isBusy}>
                     Select
                   </button>
                 </td>
@@ -825,9 +909,9 @@ function EumetsatScreen({ addLog }: { addLog: (message: string) => void }) {
         </table>
         <div className="action-row left wrap">
           <input value={selectedProduct} placeholder="Selected product id" onChange={(event) => setSelectedProduct(event.target.value)} />
-          <button className="primary-action" type="button" onClick={downloadProduct} disabled={!selectedProduct || !outputDir}>
-            <Download size={18} />
-            Download Selected
+          <button className="primary-action" type="button" onClick={downloadProduct} disabled={isBusy || !selectedProduct || !outputDir}>
+            {busyAction === "download" ? <Loader2 className="spin" size={18} /> : <Download size={18} />}
+            {busyAction === "download" ? "Downloading" : "Download Selected"}
           </button>
         </div>
       </div>
@@ -1061,9 +1145,15 @@ function SavedScreen({
   const [lastPath, setLastPath] = useState("");
 
   async function refresh() {
-    const saved = await listSavedDatasets();
-    setItems(saved);
-    onSavedCountChange(saved.length);
+    try {
+      const saved = await listSavedDatasets();
+      setItems(saved);
+      onSavedCountChange(saved.length);
+    } catch (err) {
+      setItems([]);
+      onSavedCountChange(0);
+      addLog(`Saved dataset refresh failed: ${errorMessage(err)}`);
+    }
   }
 
   useEffect(() => {
@@ -1169,6 +1259,11 @@ function ApiScreen({
     try {
       await invoke<void>("store_api_key", { name, value: values[name] ?? "" });
       setValues((current) => ({ ...current, [name]: "" }));
+      setTests((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
       await refreshApiStatus();
       addLog(`API slot stored: ${name}`);
     } catch (err) {
@@ -1179,6 +1274,11 @@ function ApiScreen({
   async function deleteKey(name: string) {
     try {
       await invoke<void>("delete_api_key", { name });
+      setTests((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
       await refreshApiStatus();
       addLog(`API slot deleted: ${name}`);
     } catch (err) {
@@ -1235,7 +1335,15 @@ function ApiScreen({
   );
 }
 
-function SettingsScreen() {
+function SettingsScreen({
+  settings,
+  onChange,
+  onReset,
+}: {
+  settings: AppSettings;
+  onChange: (partial: Partial<AppSettings>) => void;
+  onReset: () => void;
+}) {
   return (
     <section className="stack-screen">
       <section className="screen-heading">
@@ -1244,22 +1352,51 @@ function SettingsScreen() {
         </div>
         <div>
           <h1>Settings</h1>
-          <p>Defaults for units, theme, storage, and request handling</p>
+          <p>Defaults for startup, previews, storage, and request handling</p>
         </div>
       </section>
       <div className="card form-card">
         <div className="field-grid two">
           <label>
-            Theme
-            <select defaultValue="dark">
-              <option value="dark">Dark</option>
-              <option value="system">System</option>
+            Startup Screen
+            <select value={settings.startupScreen} onChange={(event) => onChange({ startupScreen: event.target.value as Screen })}>
+              {navItems.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Initial Preview Rows
+            <select value={settings.previewRows} onChange={(event) => onChange({ previewRows: toFiniteNumber(event.target.value, settings.previewRows) })}>
+              {previewRowOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value} rows
+                </option>
+              ))}
             </select>
           </label>
           <label>
             Request Timeout
-            <input defaultValue="60 seconds" readOnly />
+            <select value={settings.requestTimeoutSeconds} onChange={(event) => onChange({ requestTimeoutSeconds: toFiniteNumber(event.target.value, settings.requestTimeoutSeconds) })}>
+              {requestTimeoutOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value} seconds
+                </option>
+              ))}
+            </select>
           </label>
+          <label>
+            Credential Storage
+            <input value="OS keychain" readOnly />
+          </label>
+        </div>
+        <div className="action-row left wrap">
+          <button type="button" className="secondary-action" onClick={onReset}>
+            <RotateCcw size={18} />
+            Reset Settings
+          </button>
         </div>
       </div>
     </section>
@@ -1284,9 +1421,10 @@ function AboutScreen() {
           Windows install QA, EUMDAC bundling, and live PVWatts/NLR validation require release credentials or target platforms.
         </p>
         <div className="source-list">
-          <a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">NASA POWER API</a>
-          <a href="https://tauri.app/" target="_blank" rel="noreferrer">Tauri</a>
-          <a href="https://developer.nlr.gov/docs/solar/pvwatts/" target="_blank" rel="noreferrer">PVWatts V8</a>
+          <a href={POWER_API_DOCS_URL} target="_blank" rel="noreferrer">NASA POWER API</a>
+          <a href={TAURI_URL} target="_blank" rel="noreferrer">Tauri</a>
+          <a href={PVWATTS_DOCS_URL} target="_blank" rel="noreferrer">PVWatts V8</a>
+          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer">Source Repository</a>
         </div>
       </div>
     </section>

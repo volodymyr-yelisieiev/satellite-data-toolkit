@@ -4,14 +4,15 @@ use std::{
     process::Command,
 };
 
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 use satellite_core::{
-    estimate_pv as estimate_pv_core, estimate_pvwatts as estimate_pvwatts_core,
-    fetch_power_dataset as fetch_power_dataset_core, run_ndvi as run_ndvi_core,
-    validate_ndvi_inputs as validate_ndvi_inputs_core, NdviJob, NdviResult, PowerDataset,
-    PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest, PvWattsResult,
+    estimate_pv as estimate_pv_core, estimate_pvwatts_with_timeout as estimate_pvwatts_core,
+    fetch_power_dataset_with_timeout as fetch_power_dataset_core, normalize_http_timeout_seconds,
+    run_ndvi as run_ndvi_core, validate_ndvi_inputs as validate_ndvi_inputs_core, NdviJob,
+    NdviResult, PowerDataset, PowerRequest, PvEstimate, PvEstimateInput, PvWattsRequest,
+    PvWattsResult, DEFAULT_HTTP_TIMEOUT_SECONDS,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,7 +23,15 @@ const KEYCHAIN_SERVICE: &str = "Satellite Data Toolkit";
 const MAX_DATASET_RECORDS: usize = 120_000;
 const MAX_DATASET_JSON_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SAVED_NAME_LEN: usize = 160;
-const EUMDAC_SIDECAR_NAMES: &[&str] = &["eumdac", "eumdac.exe", "eumdac-cli", "eumdac-cli.exe"];
+const EUMDAC_SIDECAR_NAMES: &[&str] = &[
+    "eumdac",
+    "eumdac.exe",
+    "eumdac-cli",
+    "eumdac-cli.exe",
+    "eumdac-aarch64-apple-darwin",
+    "eumdac-x86_64-apple-darwin",
+    "eumdac-x86_64-pc-windows-msvc.exe",
+];
 const EUMDAC_MANIFEST_NAMES: &[&str] = &["eumdac-sidecar-manifest.json", "eumdac-sidecars.json"];
 
 #[derive(Debug, Serialize)]
@@ -129,10 +138,16 @@ struct EumdacSidecarManifestEntry {
 }
 
 #[tauri::command]
-async fn fetch_power_dataset(request: PowerRequest) -> Result<PowerDataset, String> {
-    fetch_power_dataset_core(request)
-        .await
-        .map_err(|error| error.to_string())
+async fn fetch_power_dataset(
+    request: PowerRequest,
+    timeout_seconds: Option<u64>,
+) -> Result<PowerDataset, String> {
+    fetch_power_dataset_core(
+        request,
+        normalize_http_timeout_seconds(timeout_seconds.unwrap_or(DEFAULT_HTTP_TIMEOUT_SECONDS)),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -141,12 +156,19 @@ fn estimate_pv(input: PvEstimateInput) -> Result<PvEstimate, String> {
 }
 
 #[tauri::command]
-async fn estimate_pvwatts(request: PvWattsRequest) -> Result<PvWattsResult, String> {
-    let api_key = get_api_key("nlr_pvwatts_key")?
+async fn estimate_pvwatts(
+    request: PvWattsRequest,
+    timeout_seconds: Option<u64>,
+) -> Result<PvWattsResult, String> {
+    let api_key = get_present_api_key("nlr_pvwatts_key")?
         .ok_or_else(|| "PVWatts/NLR API key is not stored".to_string())?;
-    estimate_pvwatts_core(request, &api_key)
-        .await
-        .map_err(|error| error.to_string())
+    estimate_pvwatts_core(
+        request,
+        &api_key,
+        normalize_http_timeout_seconds(timeout_seconds.unwrap_or(DEFAULT_HTTP_TIMEOUT_SECONDS)),
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -199,18 +221,28 @@ fn list_saved_datasets(app: AppHandle) -> Result<Vec<SavedDataset>, String> {
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
-            Ok(SavedDataset {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                created_at: row.get(3)?,
-                record_count: row.get::<_, i64>(4)? as usize,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
         })
         .map_err(|error| error.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())
+    let mut saved = Vec::new();
+    for row in rows {
+        let (id, name, kind, created_at, record_count) = row.map_err(|error| error.to_string())?;
+        saved.push(SavedDataset {
+            id,
+            name,
+            kind,
+            created_at,
+            record_count: record_count_from_db(record_count)?,
+        });
+    }
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -225,7 +257,7 @@ fn load_saved_dataset(app: AppHandle, id: String) -> Result<PowerDataset, String
         .optional()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "saved dataset not found".to_string())?;
-    serde_json::from_str(&payload).map_err(|error| error.to_string())
+    parse_saved_dataset_payload(&payload)
 }
 
 #[tauri::command]
@@ -277,7 +309,7 @@ fn store_api_key(name: String, value: String) -> Result<(), String> {
 #[tauri::command]
 fn has_api_key(name: String) -> Result<bool, String> {
     validate_secret_name(&name)?;
-    get_api_key(&name).map(|value| value.is_some_and(|value| !value.is_empty()))
+    Ok(get_present_api_key(&name)?.is_some())
 }
 
 #[tauri::command]
@@ -293,11 +325,11 @@ fn delete_api_key(name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
+async fn test_api_key(app: AppHandle, name: String) -> Result<CredentialTestResult, String> {
     validate_secret_name(&name)?;
 
     if name == "nlr_pvwatts_key" {
-        let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
+        let present = get_present_api_key(&name)?.is_some();
         if !present {
             return Ok(CredentialTestResult {
                 slot: name,
@@ -312,11 +344,12 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
             tilt_degrees: 30.0,
             azimuth_degrees: 180.0,
             losses_percent: 14.0,
+            inverter_efficiency_percent: Some(96.0),
             module_type: 0,
             array_type: 1,
             timeframe: "monthly".to_string(),
         };
-        match estimate_pvwatts(request).await {
+        match estimate_pvwatts(request, None).await {
             Ok(_) => {
                 return Ok(CredentialTestResult {
                     slot: name,
@@ -334,10 +367,9 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
         }
     }
 
-    let key_present = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
-    let secret_present =
-        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
-    let sidecar_status = eumdac_sidecar_status()?;
+    let key_present = get_present_api_key("eumetsat_consumer_key")?.is_some();
+    let secret_present = get_present_api_key("eumetsat_consumer_secret")?.is_some();
+    let sidecar_status = eumdac_sidecar_status(&app)?;
     Ok(evaluate_eumetsat_credential_status(
         name,
         key_present,
@@ -348,21 +380,22 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
 }
 
 #[tauri::command]
-fn check_eumdac_sidecar() -> Result<bool, String> {
-    let status = eumdac_sidecar_status()?;
+fn check_eumdac_sidecar(app: AppHandle) -> Result<bool, String> {
+    let status = eumdac_sidecar_status(&app)?;
     Ok(status.trusted || (status.found && allow_unverified_eumdac_sidecar()))
 }
 
 #[tauri::command]
-fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
-    eumdac_sidecar_status()
+fn get_eumdac_sidecar_status(app: AppHandle) -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status(&app)
 }
 
 #[tauri::command]
 fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
-    let sidecar = trusted_eumdac_sidecar()?;
     validate_eumetsat_query(&query)?;
-    sync_eumdac_credentials(&app, &sidecar)?;
+    let sidecar = trusted_eumdac_sidecar(&app)?;
+    let credentials = sync_eumdac_credentials(&app, &sidecar)?;
+    let secret_values = eumetsat_secret_values(&credentials);
     let limit = query.limit.clamp(1, 100).to_string();
     let bbox = parse_eumdac_bbox(&query.bbox)?;
     let mut command = Command::new(sidecar);
@@ -385,9 +418,12 @@ fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<Produ
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
-        return Err(redacted_process_error(&output.stderr));
+        return Err(redacted_process_error_with_secrets(
+            &output.stderr,
+            &secret_values,
+        ));
     }
-    let raw_output = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw_output = redacted_process_output_with_secrets(&output.stdout, &secret_values);
     Ok(ProductList {
         products: parse_eumdac_products(&raw_output),
         raw_output,
@@ -401,20 +437,11 @@ fn download_eumetsat_product(
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
-    let sidecar = trusted_eumdac_sidecar()?;
-    sync_eumdac_credentials(&app, &sidecar)?;
-    let clean_collection_id = collection_id.trim().to_string();
-    let clean_product_id = product_id.trim().to_string();
-    if clean_collection_id.is_empty() {
-        return Err("collection id is required".to_string());
-    }
-    if clean_product_id.is_empty() {
-        return Err("product id is required".to_string());
-    }
-    let output_path = PathBuf::from(output_dir.trim());
-    if !output_path.exists() || !output_path.is_dir() {
-        return Err("output directory must exist".to_string());
-    }
+    let (clean_collection_id, clean_product_id, output_path) =
+        validate_eumetsat_download_request(&collection_id, &product_id, &output_dir)?;
+    let sidecar = trusted_eumdac_sidecar(&app)?;
+    let credentials = sync_eumdac_credentials(&app, &sidecar)?;
+    let secret_values = eumetsat_secret_values(&credentials);
     let mut command = Command::new(sidecar);
     configure_eumdac_command(&app, &mut command)?;
     let output = command
@@ -430,14 +457,17 @@ fn download_eumetsat_product(
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
-        return Err(redacted_process_error(&output.stderr));
+        return Err(redacted_process_error_with_secrets(
+            &output.stderr,
+            &secret_values,
+        ));
     }
     Ok(DownloadResult {
         collection_id: clean_collection_id,
         product_id: clean_product_id,
         output_dir: output_path.to_string_lossy().to_string(),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout: redacted_process_output_with_secrets(&output.stdout, &secret_values),
+        stderr: redacted_process_output_with_secrets(&output.stderr, &secret_values),
     })
 }
 
@@ -535,21 +565,34 @@ fn resolve_export_path(
     destination: Option<&str>,
     default_name: &str,
 ) -> Result<PathBuf, String> {
-    if let Some(destination) = destination.map(str::trim).filter(|value| !value.is_empty()) {
-        let path = PathBuf::from(destination);
-        if path.is_dir() {
-            return Ok(path.join(default_name));
-        }
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                return Err("export destination parent directory does not exist".to_string());
-            }
-        }
+    if let Some(path) = resolve_destination_path(destination, default_name)? {
         return Ok(path);
     }
     let exports_dir = app_data_dir(app)?.join("exports");
     fs::create_dir_all(&exports_dir).map_err(|error| error.to_string())?;
     Ok(exports_dir.join(default_name))
+}
+
+fn resolve_destination_path(
+    destination: Option<&str>,
+    default_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    let Some(destination) = destination.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(destination);
+    if path.is_dir() {
+        return Ok(Some(path.join(default_name)));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if !parent.exists() {
+            return Err("export destination parent directory does not exist".to_string());
+        }
+    }
+    Ok(Some(path))
 }
 
 fn dataset_to_csv(dataset: &PowerDataset) -> String {
@@ -607,6 +650,20 @@ fn validate_dataset_for_storage(dataset: &PowerDataset) -> Result<(), String> {
     Ok(())
 }
 
+fn parse_saved_dataset_payload(payload: &str) -> Result<PowerDataset, String> {
+    if payload.len() > MAX_DATASET_JSON_BYTES {
+        return Err("dataset payload is too large to load".to_string());
+    }
+    let dataset =
+        serde_json::from_str::<PowerDataset>(payload).map_err(|error| error.to_string())?;
+    validate_dataset_for_storage(&dataset)?;
+    Ok(dataset)
+}
+
+fn record_count_from_db(value: i64) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| "saved dataset record count cannot be negative".to_string())
+}
+
 fn validate_saved_name(name: &str) -> Result<String, String> {
     let clean = name.trim();
     if clean.is_empty() {
@@ -625,6 +682,13 @@ fn validate_secret_name(name: &str) -> Result<(), String> {
         "eumetsat_consumer_key" | "eumetsat_consumer_secret" | "nlr_pvwatts_key" => Ok(()),
         _ => Err("unknown API slot".to_string()),
     }
+}
+
+fn normalize_stored_secret(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let clean = value.trim();
+        (!clean.is_empty()).then(|| clean.to_string())
+    })
 }
 
 fn evaluate_eumetsat_credential_status(
@@ -667,12 +731,14 @@ fn get_api_key(name: &str) -> Result<Option<String>, String> {
     }
 }
 
+fn get_present_api_key(name: &str) -> Result<Option<String>, String> {
+    Ok(normalize_stored_secret(get_api_key(name)?))
+}
+
 fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
-    let consumer_key = get_api_key("eumetsat_consumer_key")?
-        .filter(|value| !value.trim().is_empty())
+    let consumer_key = get_present_api_key("eumetsat_consumer_key")?
         .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
-    let consumer_secret = get_api_key("eumetsat_consumer_secret")?
-        .filter(|value| !value.trim().is_empty())
+    let consumer_secret = get_present_api_key("eumetsat_consumer_secret")?
         .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
     Ok(EumetsatCredentials {
         consumer_key,
@@ -680,7 +746,7 @@ fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
     })
 }
 
-fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String> {
+fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<EumetsatCredentials, String> {
     let credentials = get_eumetsat_credentials()?;
     let mut command = Command::new(sidecar);
     configure_eumdac_command(app, &mut command)?;
@@ -693,7 +759,7 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
         .output()
         .map_err(|error| error.to_string())?;
     if output.status.success() {
-        return Ok(());
+        return Ok(credentials);
     }
 
     let mut fallback = Command::new(sidecar);
@@ -707,7 +773,7 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
         .output()
         .map_err(|error| error.to_string())?;
     if fallback_output.status.success() {
-        Ok(())
+        Ok(credentials)
     } else {
         Err(redacted_process_error_with_secrets(
             &fallback_output.stderr,
@@ -717,6 +783,13 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
             ],
         ))
     }
+}
+
+fn eumetsat_secret_values(credentials: &EumetsatCredentials) -> [&str; 2] {
+    [
+        credentials.consumer_key.as_str(),
+        credentials.consumer_secret.as_str(),
+    ]
 }
 
 fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<(), String> {
@@ -729,23 +802,38 @@ fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<()
     Ok(())
 }
 
-fn find_eumdac_sidecar() -> Result<Option<PathBuf>, String> {
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    let Some(dir) = exe.parent() else {
-        return Ok(None);
-    };
-    Ok(EUMDAC_SIDECAR_NAMES
+fn find_eumdac_sidecar(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    let search_dirs = eumdac_search_dirs(app)?;
+    Ok(search_dirs
         .iter()
-        .map(|name| dir.join(name))
+        .flat_map(|dir| EUMDAC_SIDECAR_NAMES.iter().map(|name| dir.join(name)))
         .find(|path| is_executable_candidate(path)))
+}
+
+fn eumdac_search_dirs(app: &AppHandle) -> Result<Vec<PathBuf>, String> {
+    let mut dirs = Vec::new();
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    if let Some(dir) = exe.parent() {
+        push_unique_path(&mut dirs, dir.to_path_buf());
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut dirs, resource_dir);
+    }
+    Ok(dirs)
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
+    }
 }
 
 fn is_executable_candidate(path: &Path) -> bool {
     path.exists() && path.is_file()
 }
 
-fn trusted_eumdac_sidecar() -> Result<PathBuf, String> {
-    let status = eumdac_sidecar_status()?;
+fn trusted_eumdac_sidecar(app: &AppHandle) -> Result<PathBuf, String> {
+    let status = eumdac_sidecar_status(app)?;
     let Some(path) = status.path.as_deref().map(PathBuf::from) else {
         return Err(status.message);
     };
@@ -762,9 +850,10 @@ fn allow_unverified_eumdac_sidecar() -> bool {
         .unwrap_or(false)
 }
 
-fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
-    match find_eumdac_sidecar()? {
-        Some(path) => eumdac_sidecar_status_for_path(path),
+fn eumdac_sidecar_status(app: &AppHandle) -> Result<EumdacSidecarStatus, String> {
+    let manifest_dirs = eumdac_manifest_dirs(app);
+    match find_eumdac_sidecar(app)? {
+        Some(path) => eumdac_sidecar_status_for_path_with_manifest_dirs(path, &manifest_dirs),
         None => Ok(EumdacSidecarStatus {
             found: false,
             trusted: false,
@@ -780,19 +869,30 @@ fn eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
     }
 }
 
+#[cfg(test)]
 fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, String> {
+    eumdac_sidecar_status_for_path_with_manifest_dirs(path, &[])
+}
+
+fn eumdac_manifest_dirs(app: &AppHandle) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut dirs, resource_dir);
+    }
+    dirs
+}
+
+fn eumdac_sidecar_status_for_path_with_manifest_dirs(
+    path: PathBuf,
+    extra_manifest_dirs: &[PathBuf],
+) -> Result<EumdacSidecarStatus, String> {
     let sha256 = sha256_file(&path)?;
     let file_name = path
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("eumdac")
         .to_string();
-    let manifest_path = path.parent().and_then(|dir| {
-        EUMDAC_MANIFEST_NAMES
-            .iter()
-            .map(|name| dir.join(name))
-            .find(|candidate| candidate.exists() && candidate.is_file())
-    });
+    let manifest_path = find_eumdac_manifest_path(&path, extra_manifest_dirs);
     let Some(manifest_path) = manifest_path else {
         return Ok(EumdacSidecarStatus {
             found: true,
@@ -863,6 +963,19 @@ fn eumdac_sidecar_status_for_path(path: PathBuf) -> Result<EumdacSidecarStatus, 
     })
 }
 
+fn find_eumdac_manifest_path(path: &Path, extra_manifest_dirs: &[PathBuf]) -> Option<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(dir) = path.parent() {
+        push_unique_path(&mut dirs, dir.to_path_buf());
+    }
+    for dir in extra_manifest_dirs {
+        push_unique_path(&mut dirs, dir.clone());
+    }
+    dirs.iter()
+        .flat_map(|dir| EUMDAC_MANIFEST_NAMES.iter().map(|name| dir.join(name)))
+        .find(|candidate| candidate.exists() && candidate.is_file())
+}
+
 fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     serde_json::from_str(&content).map_err(|error| format!("invalid EUMDAC manifest: {error}"))
@@ -870,7 +983,10 @@ fn read_eumdac_sidecar_manifest(path: &Path) -> Result<EumdacSidecarManifest, St
 
 fn sha256_file(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
 fn normalized_sha256(value: &str) -> String {
@@ -886,35 +1002,90 @@ fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
         return Err("collection id is required".to_string());
     }
     parse_eumdac_bbox(&query.bbox)?;
-    if query.start_time.trim().is_empty() || query.end_time.trim().is_empty() {
-        return Err("start and end time are required".to_string());
+    let start_time = parse_eumdac_time(&query.start_time)?;
+    let end_time = parse_eumdac_time(&query.end_time)?;
+    if start_time > end_time {
+        return Err("start time must be before or equal to end time".to_string());
     }
     Ok(())
 }
 
+fn parse_eumdac_time(value: &str) -> Result<i64, String> {
+    let clean = value.trim();
+    if clean.is_empty() {
+        return Err("start and end time are required".to_string());
+    }
+
+    if let Ok(time) = chrono::DateTime::parse_from_rfc3339(clean) {
+        return Ok(time.timestamp());
+    }
+
+    NaiveDateTime::parse_from_str(clean, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(clean, "%Y-%m-%d %H:%M:%S%.f"))
+        .map(|time| time.and_utc().timestamp())
+        .map_err(|_| "start and end time must be RFC3339 or YYYY-MM-DDTHH:MM:SS".to_string())
+}
+
+fn validate_eumetsat_download_request(
+    collection_id: &str,
+    product_id: &str,
+    output_dir: &str,
+) -> Result<(String, String, PathBuf), String> {
+    let clean_collection_id = collection_id.trim().to_string();
+    let clean_product_id = product_id.trim().to_string();
+    if clean_collection_id.is_empty() {
+        return Err("collection id is required".to_string());
+    }
+    if clean_product_id.is_empty() {
+        return Err("product id is required".to_string());
+    }
+    let clean_output_dir = output_dir.trim();
+    if clean_output_dir.is_empty() {
+        return Err("output directory is required".to_string());
+    }
+    let output_path = PathBuf::from(clean_output_dir);
+    if !output_path.exists() || !output_path.is_dir() {
+        return Err("output directory must exist".to_string());
+    }
+    Ok((clean_collection_id, clean_product_id, output_path))
+}
+
 fn parse_eumdac_bbox(value: &str) -> Result<[String; 4], String> {
-    let parts = value
+    let coordinates = value
         .split(|character: char| character == ',' || character.is_whitespace())
         .map(str::trim)
         .filter(|part| !part.is_empty())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    if parts.len() != 4 {
-        return Err("bbox must contain four comma- or space-separated numbers".to_string());
+        .map(|part| {
+            let number = part
+                .parse::<f64>()
+                .map_err(|_| "bbox must contain only finite numbers".to_string())?;
+            if !number.is_finite() {
+                return Err("bbox must contain only finite numbers".to_string());
+            }
+            Ok((part.to_string(), number))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if coordinates.len() != 4 {
+        return Err("bbox must contain four W,S,E,N coordinates".to_string());
     }
-    for part in &parts {
-        let number = part
-            .parse::<f64>()
-            .map_err(|_| "bbox must contain only finite numbers".to_string())?;
-        if !number.is_finite() {
-            return Err("bbox must contain only finite numbers".to_string());
-        }
+    let west = coordinates[0].1;
+    let south = coordinates[1].1;
+    let east = coordinates[2].1;
+    let north = coordinates[3].1;
+    if !(-180.0..=180.0).contains(&west) || !(-180.0..=180.0).contains(&east) {
+        return Err("bbox west/east coordinates must be between -180 and 180".to_string());
+    }
+    if !(-90.0..=90.0).contains(&south) || !(-90.0..=90.0).contains(&north) {
+        return Err("bbox south/north coordinates must be between -90 and 90".to_string());
+    }
+    if west > east || south > north {
+        return Err("bbox must be ordered as west,south,east,north".to_string());
     }
     Ok([
-        parts[0].clone(),
-        parts[1].clone(),
-        parts[2].clone(),
-        parts[3].clone(),
+        coordinates[0].0.clone(),
+        coordinates[1].0.clone(),
+        coordinates[2].0.clone(),
+        coordinates[3].0.clone(),
     ])
 }
 
@@ -967,27 +1138,28 @@ fn json_products(value: serde_json::Value) -> Vec<EumetsatProduct> {
         .collect()
 }
 
-fn redacted_process_error(stderr: &[u8]) -> String {
-    redacted_process_error_with_secrets(stderr, &[])
-}
-
 fn redacted_process_error_with_secrets(stderr: &[u8], secrets: &[&str]) -> String {
-    let message = String::from_utf8_lossy(stderr);
+    let message = redacted_process_output_with_secrets(stderr, secrets);
     if message.trim().is_empty() {
         "EUMDAC command failed".to_string()
     } else {
-        let mut redacted = message
-            .replace("consumer_secret", "consumer_secret[redacted]")
-            .replace("consumer_key", "consumer_key[redacted]");
-        for secret in secrets
-            .iter()
-            .map(|secret| secret.trim())
-            .filter(|secret| !secret.is_empty())
-        {
-            redacted = redacted.replace(secret, "[redacted]");
-        }
-        redacted
+        message
     }
+}
+
+fn redacted_process_output_with_secrets(output: &[u8], secrets: &[&str]) -> String {
+    let message = String::from_utf8_lossy(output);
+    let mut redacted = message
+        .replace("consumer_secret", "consumer_secret[redacted]")
+        .replace("consumer_key", "consumer_key[redacted]");
+    for secret in secrets
+        .iter()
+        .map(|secret| secret.trim())
+        .filter(|secret| !secret.is_empty())
+    {
+        redacted = redacted.replace(secret, "[redacted]");
+    }
+    redacted
 }
 
 fn default_eumetsat_limit() -> usize {
@@ -1031,48 +1203,177 @@ mod tests {
 
     #[test]
     fn csv_escapes_values_and_preserves_raw_timestamp() {
-        let dataset = PowerDataset {
-            request: PowerRequest {
-                latitude: 0.0,
-                longitude: 0.0,
-                start_date: "2024-05-01".to_string(),
-                end_date: "2024-05-01".to_string(),
-                parameters: vec!["A,B".to_string()],
-                temporal: "daily".to_string(),
-                community: "RE".to_string(),
-                time_standard: "LST".to_string(),
-            },
-            records: vec![PowerRecord {
-                raw_timestamp: "20240501".to_string(),
-                timestamp: "2024-05-01".to_string(),
-                values: BTreeMap::from([("A,B".to_string(), Some(1.25))]),
-            }],
-            units: BTreeMap::new(),
-            long_names: BTreeMap::new(),
-            status_code: 200,
-            api_version: "test".to_string(),
-            time_standard: "LST".to_string(),
-            fill_value: -999.0,
-            data_time_seconds: 0.0,
-            process_time_seconds: 0.0,
-            fetched_at: "now".to_string(),
-        };
+        let dataset = test_dataset(vec!["A,B".to_string()]);
         let csv = dataset_to_csv(&dataset);
         assert!(csv.contains("timestamp,raw_timestamp,\"A,B\""));
         assert!(csv.contains("2024-05-01,20240501,1.25"));
     }
 
     #[test]
+    fn csv_escapes_quotes_newlines_and_missing_values() {
+        let parameters = vec![
+            "quote\"param".to_string(),
+            "line\nparam".to_string(),
+            "missing".to_string(),
+        ];
+        let mut dataset = test_dataset(parameters);
+        dataset.records[0]
+            .values
+            .insert("quote\"param".to_string(), Some(2.5));
+        dataset.records[0]
+            .values
+            .insert("line\nparam".to_string(), None);
+        dataset.records[0].values.remove("missing");
+
+        let csv = dataset_to_csv(&dataset);
+
+        assert!(csv.contains("timestamp,raw_timestamp,\"quote\"\"param\",\"line\nparam\",missing"));
+        assert!(csv.contains("2024-05-01,20240501,2.5,,"));
+    }
+
+    #[test]
+    fn validates_saved_dataset_storage_limits() {
+        let mut oversized = test_dataset(vec!["ALLSKY_SFC_SW_DWN".to_string()]);
+        let record = oversized.records[0].clone();
+        oversized.records = vec![record; MAX_DATASET_RECORDS + 1];
+
+        let error = validate_dataset_for_storage(&oversized).unwrap_err();
+        assert!(error.contains("dataset has too many records"));
+
+        let valid = test_dataset(vec!["ALLSKY_SFC_SW_DWN".to_string()]);
+        assert!(validate_dataset_for_storage(&valid).is_ok());
+    }
+
+    #[test]
+    fn trims_and_bounds_saved_dataset_names() {
+        assert_eq!(
+            validate_saved_name("  NASA May sample  ").unwrap(),
+            "NASA May sample"
+        );
+        assert_eq!(
+            validate_saved_name("   ").unwrap_err(),
+            "dataset name is required"
+        );
+        assert!(validate_saved_name(&"x".repeat(MAX_SAVED_NAME_LEN + 1))
+            .unwrap_err()
+            .contains("dataset name is too long"));
+    }
+
+    #[test]
+    fn resolves_explicit_export_destinations() {
+        let bare_file = resolve_destination_path(Some(" report.csv "), "default.csv").unwrap();
+        assert_eq!(bare_file, Some(PathBuf::from("report.csv")));
+
+        let dir = temp_dir_path("export_destination_dir");
+        fs::create_dir_all(&dir).unwrap();
+        let directory_destination =
+            resolve_destination_path(Some(dir.to_string_lossy().as_ref()), "default.csv").unwrap();
+        assert_eq!(directory_destination, Some(dir.join("default.csv")));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rejects_export_destination_with_missing_parent() {
+        let path = temp_dir_path("missing_export_parent").join("report.csv");
+        let error = resolve_destination_path(Some(path.to_string_lossy().as_ref()), "default.csv")
+            .unwrap_err();
+
+        assert_eq!(error, "export destination parent directory does not exist");
+    }
+
+    #[test]
+    fn ignores_blank_export_destination() {
+        assert_eq!(
+            resolve_destination_path(Some("   "), "default.csv").unwrap(),
+            None
+        );
+        assert_eq!(resolve_destination_path(None, "default.csv").unwrap(), None);
+    }
+
+    #[test]
+    fn saved_dataset_payload_is_validated_after_parsing() {
+        let mut dataset = test_power_dataset();
+        dataset.records = vec![dataset.records[0].clone(); MAX_DATASET_RECORDS + 1];
+        let payload = serde_json::to_string(&dataset).unwrap();
+
+        let error = parse_saved_dataset_payload(&payload).unwrap_err();
+
+        assert!(error.contains("too many records"));
+    }
+
+    #[test]
     fn parses_comma_or_space_separated_eumdac_bbox() {
         assert_eq!(
-            parse_eumdac_bbox("51.28,51.69,0.51,0.33").unwrap(),
-            ["51.28", "51.69", "0.51", "0.33"]
+            parse_eumdac_bbox("-0.51,51.28,0.33,51.69").unwrap(),
+            ["-0.51", "51.28", "0.33", "51.69"]
         );
         assert_eq!(
-            parse_eumdac_bbox("51.28 51.69 0.51 0.33").unwrap(),
-            ["51.28", "51.69", "0.51", "0.33"]
+            parse_eumdac_bbox("-0.51 51.28 0.33 51.69").unwrap(),
+            ["-0.51", "51.28", "0.33", "51.69"]
         );
         assert!(parse_eumdac_bbox("51.28,invalid,0.51,0.33").is_err());
+        assert!(parse_eumdac_bbox("51.28,51.69,0.51,0.33").is_err());
+        assert!(parse_eumdac_bbox("-181,51.28,0.33,51.69").is_err());
+    }
+
+    #[test]
+    fn validates_eumdac_time_range() {
+        let mut query = test_eumetsat_query();
+        validate_eumetsat_query(&query).unwrap();
+
+        query.start_time = "2024-11-10T10:00:00".to_string();
+        query.end_time = "2024-11-10T09:00:00".to_string();
+        assert!(validate_eumetsat_query(&query)
+            .unwrap_err()
+            .contains("before or equal"));
+
+        query = test_eumetsat_query();
+        query.start_time = "not-a-time".to_string();
+        assert!(validate_eumetsat_query(&query)
+            .unwrap_err()
+            .contains("RFC3339"));
+
+        query = test_eumetsat_query();
+        query.start_time = "2024-11-10T08:00:00Z".to_string();
+        query.end_time = "2024-11-10T09:00:00+00:00".to_string();
+        validate_eumetsat_query(&query).unwrap();
+    }
+
+    #[test]
+    fn validates_eumdac_download_request_before_sidecar_work() {
+        assert!(validate_eumetsat_download_request(" ", "PRODUCT_A", "/tmp")
+            .unwrap_err()
+            .contains("collection id"));
+        assert!(
+            validate_eumetsat_download_request("COLLECTION", " ", "/tmp")
+                .unwrap_err()
+                .contains("product id")
+        );
+        assert!(
+            validate_eumetsat_download_request("COLLECTION", "PRODUCT_A", " ")
+                .unwrap_err()
+                .contains("output directory is required")
+        );
+        assert!(validate_eumetsat_download_request(
+            "COLLECTION",
+            "PRODUCT_A",
+            "/definitely/not/a/satellite/toolkit/path"
+        )
+        .unwrap_err()
+        .contains("must exist"));
+
+        let dir = temp_dir_path("eumdac_download_validation");
+        fs::create_dir_all(&dir).unwrap();
+        let padded_dir = format!(" {} ", dir.to_string_lossy());
+
+        let (collection, product, output_dir) =
+            validate_eumetsat_download_request(" COLLECTION ", " PRODUCT_A ", &padded_dir).unwrap();
+
+        assert_eq!(collection, "COLLECTION");
+        assert_eq!(product, "PRODUCT_A");
+        assert_eq!(output_dir, dir);
+
+        let _ = fs::remove_dir_all(output_dir);
     }
 
     #[test]
@@ -1092,6 +1393,39 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn normalizes_stored_secret_presence() {
+        assert_eq!(normalize_stored_secret(None), None);
+        assert_eq!(normalize_stored_secret(Some(String::new())), None);
+        assert_eq!(normalize_stored_secret(Some(" \n\t ".to_string())), None);
+        assert_eq!(
+            normalize_stored_secret(Some("  live-token\n".to_string())).as_deref(),
+            Some("live-token")
+        );
+    }
+
+    #[test]
+    fn redacts_eumdac_secret_values_from_process_output() {
+        let message = redacted_process_output_with_secrets(
+            b"download complete for abc123 with token def456",
+            &["abc123", "def456"],
+        );
+
+        assert!(!message.contains("abc123"));
+        assert!(!message.contains("def456"));
+        assert_eq!(
+            message,
+            "download complete for [redacted] with token [redacted]"
+        );
+    }
+
+    #[test]
+    fn rejects_negative_saved_dataset_record_counts() {
+        assert_eq!(record_count_from_db(0).unwrap(), 0);
+        assert_eq!(record_count_from_db(42).unwrap(), 42);
+        assert!(record_count_from_db(-1).unwrap_err().contains("negative"));
     }
 
     #[test]
@@ -1140,6 +1474,28 @@ mod tests {
 
         assert!(result.ok);
         assert!(result.message.contains("sidecar is ready"));
+    }
+
+    #[test]
+    fn sha256_file_returns_lowercase_hex_digest() {
+        let dir = temp_dir_path("sha256_format");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sample.bin");
+        fs::write(&path, b"abc").unwrap();
+
+        let digest = sha256_file(&path).unwrap();
+
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(digest.len(), 64);
+        assert!(digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit()));
+        assert_eq!(digest, digest.to_ascii_lowercase());
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     fn ready_eumdac_status() -> EumdacSidecarStatus {
@@ -1204,6 +1560,41 @@ mod tests {
     }
 
     #[test]
+    fn trusts_eumdac_sidecar_when_manifest_is_in_resource_dir() {
+        let sidecar_dir = temp_dir_path("eumdac_sidecar_dir");
+        let resource_dir = temp_dir_path("eumdac_resource_dir");
+        fs::create_dir_all(&sidecar_dir).unwrap();
+        fs::create_dir_all(&resource_dir).unwrap();
+        let sidecar = sidecar_dir.join("eumdac");
+        fs::write(&sidecar, b"fake signed eumdac binary").unwrap();
+        let sha256 = sha256_file(&sidecar).unwrap();
+        fs::write(
+            resource_dir.join("eumdac-sidecar-manifest.json"),
+            format!(r#"{{"binaries":[{{"name":"eumdac","sha256":"{sha256}"}}]}}"#),
+        )
+        .unwrap();
+
+        let status = eumdac_sidecar_status_for_path_with_manifest_dirs(
+            sidecar,
+            std::slice::from_ref(&resource_dir),
+        )
+        .unwrap();
+        assert!(status.found);
+        assert!(status.trusted);
+        let expected_manifest_path = resource_dir
+            .join("eumdac-sidecar-manifest.json")
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(
+            status.manifest_path.as_deref(),
+            Some(expected_manifest_path.as_str())
+        );
+
+        let _ = fs::remove_dir_all(sidecar_dir);
+        let _ = fs::remove_dir_all(resource_dir);
+    }
+
+    #[test]
     fn rejects_eumdac_sidecar_when_manifest_checksum_mismatches() {
         let dir = temp_dir_path("untrusted_eumdac");
         fs::create_dir_all(&dir).unwrap();
@@ -1233,5 +1624,52 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn test_power_dataset() -> PowerDataset {
+        test_dataset(vec!["ALLSKY_SFC_SW_DWN".to_string()])
+    }
+
+    fn test_dataset(parameters: Vec<String>) -> PowerDataset {
+        let values = parameters
+            .iter()
+            .map(|parameter| (parameter.clone(), Some(1.25)))
+            .collect::<BTreeMap<_, _>>();
+        PowerDataset {
+            request: PowerRequest {
+                latitude: 0.0,
+                longitude: 0.0,
+                start_date: "2024-05-01".to_string(),
+                end_date: "2024-05-01".to_string(),
+                parameters,
+                temporal: "daily".to_string(),
+                community: "RE".to_string(),
+                time_standard: "LST".to_string(),
+            },
+            records: vec![PowerRecord {
+                raw_timestamp: "20240501".to_string(),
+                timestamp: "2024-05-01".to_string(),
+                values,
+            }],
+            units: BTreeMap::new(),
+            long_names: BTreeMap::new(),
+            status_code: 200,
+            api_version: "test".to_string(),
+            time_standard: "LST".to_string(),
+            fill_value: -999.0,
+            data_time_seconds: 0.0,
+            process_time_seconds: 0.0,
+            fetched_at: "now".to_string(),
+        }
+    }
+
+    fn test_eumetsat_query() -> EumetsatQuery {
+        EumetsatQuery {
+            collection_id: "EO:EUM:DAT:METOP:OSI-104".to_string(),
+            bbox: "-0.51,51.28,0.33,51.69".to_string(),
+            start_time: "2024-11-10T08:00:00".to_string(),
+            end_time: "2024-11-10T09:00:00".to_string(),
+            limit: 20,
+        }
     }
 }

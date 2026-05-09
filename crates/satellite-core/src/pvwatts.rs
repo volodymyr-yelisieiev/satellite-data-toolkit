@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+use crate::{normalize_http_timeout_seconds, DEFAULT_HTTP_TIMEOUT_SECONDS};
+
 const PVWATTS_ENDPOINT: &str = "https://developer.nlr.gov/api/pvwatts/v8.json";
 
 #[derive(Debug, Error)]
@@ -22,6 +24,8 @@ pub enum PvWattsError {
     InvalidTilt,
     #[error("azimuth must be at least 0 and less than 360 degrees")]
     InvalidAzimuth,
+    #[error("PVWatts inverter efficiency must be between 90 and 99.5 percent")]
+    InvalidInverterEfficiency,
     #[error("module type must be 0, 1, or 2")]
     InvalidModuleType,
     #[error("array type must be between 0 and 4")]
@@ -32,10 +36,12 @@ pub enum PvWattsError {
     ApiStatus { status: u16, body: String },
     #[error("PVWatts reported errors: {0}")]
     ApiErrors(String),
+    #[error("request timed out after {seconds} seconds")]
+    Timeout { seconds: u64 },
     #[error("failed to build PVWatts URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("request failed: {0}")]
-    Request(#[from] reqwest::Error),
+    Request(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +53,8 @@ pub struct PvWattsRequest {
     pub tilt_degrees: f64,
     pub azimuth_degrees: f64,
     pub losses_percent: f64,
+    #[serde(default)]
+    pub inverter_efficiency_percent: Option<f64>,
     #[serde(default = "default_module_type")]
     pub module_type: u8,
     #[serde(default = "default_array_type")]
@@ -88,25 +96,48 @@ pub async fn estimate_pvwatts(
     request: PvWattsRequest,
     api_key: &str,
 ) -> Result<PvWattsResult, PvWattsError> {
+    estimate_pvwatts_with_timeout(request, api_key, DEFAULT_HTTP_TIMEOUT_SECONDS).await
+}
+
+pub async fn estimate_pvwatts_with_timeout(
+    request: PvWattsRequest,
+    api_key: &str,
+    timeout_seconds: u64,
+) -> Result<PvWattsResult, PvWattsError> {
     validate_request(&request)?;
     if api_key.trim().is_empty() {
         return Err(PvWattsError::MissingApiKey);
     }
     let url = build_url(&request, api_key)?;
+    let timeout_seconds = normalize_http_timeout_seconds(timeout_seconds);
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()?;
-    let response = client.get(url).send().await?;
+        .timeout(Duration::from_secs(timeout_seconds))
+        .build()
+        .map_err(sanitized_request_error)?;
+    let response = client.get(url).send().await.map_err(|error| {
+        if error.is_timeout() {
+            PvWattsError::Timeout {
+                seconds: timeout_seconds,
+            }
+        } else {
+            sanitized_request_error(error)
+        }
+    })?;
     let status = response.status();
     if !status.is_success() {
         return Err(PvWattsError::ApiStatus {
             status: status.as_u16(),
-            body: response.text().await.unwrap_or_default(),
+            body: redact_api_key(&response.text().await.unwrap_or_default()),
         });
     }
-    let parsed = response.json::<PvWattsApiResponse>().await?;
+    let parsed = response
+        .json::<PvWattsApiResponse>()
+        .await
+        .map_err(sanitized_request_error)?;
     if !parsed.errors.is_empty() {
-        return Err(PvWattsError::ApiErrors(parsed.errors.join("; ")));
+        return Err(PvWattsError::ApiErrors(redact_api_key(
+            &parsed.errors.join("; "),
+        )));
     }
     Ok(PvWattsResult {
         ac_annual_kwh: parsed.outputs.ac_annual,
@@ -118,6 +149,30 @@ pub async fn estimate_pvwatts(
     })
 }
 
+fn sanitized_request_error(error: reqwest::Error) -> PvWattsError {
+    PvWattsError::Request(redact_api_key(&error.to_string()))
+}
+
+fn redact_api_key(message: &str) -> String {
+    let mut redacted = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(index) = rest.find("api_key=") {
+        let (before, after_key) = rest.split_at(index);
+        redacted.push_str(before);
+        redacted.push_str("api_key=[redacted]");
+
+        let after_value = &after_key["api_key=".len()..];
+        let end = after_value
+            .find(|character: char| {
+                matches!(character, '&' | ')' | ' ' | '"' | '\'' | '\n' | '\r' | '\t')
+            })
+            .unwrap_or(after_value.len());
+        rest = &after_value[end..];
+    }
+    redacted.push_str(rest);
+    redacted
+}
+
 fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
     if !(-90.0..=90.0).contains(&request.latitude) {
         return Err(PvWattsError::InvalidLatitude);
@@ -125,17 +180,23 @@ fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
     if !(-180.0..=180.0).contains(&request.longitude) {
         return Err(PvWattsError::InvalidLongitude);
     }
-    if request.system_capacity_kw <= 0.0 {
+    if !request.system_capacity_kw.is_finite() || request.system_capacity_kw <= 0.0 {
         return Err(PvWattsError::InvalidCapacity);
     }
-    if !(-5.0..100.0).contains(&request.losses_percent) {
+    if !request.losses_percent.is_finite() || !(-5.0..100.0).contains(&request.losses_percent) {
         return Err(PvWattsError::InvalidLosses);
     }
-    if !(0.0..=90.0).contains(&request.tilt_degrees) {
+    if !request.tilt_degrees.is_finite() || !(0.0..=90.0).contains(&request.tilt_degrees) {
         return Err(PvWattsError::InvalidTilt);
     }
-    if !(0.0..360.0).contains(&request.azimuth_degrees) {
+    if !request.azimuth_degrees.is_finite() || !(0.0..360.0).contains(&request.azimuth_degrees) {
         return Err(PvWattsError::InvalidAzimuth);
+    }
+    if request
+        .inverter_efficiency_percent
+        .is_some_and(|value| !(90.0..=99.5).contains(&value))
+    {
+        return Err(PvWattsError::InvalidInverterEfficiency);
     }
     if request.module_type > 2 {
         return Err(PvWattsError::InvalidModuleType);
@@ -151,7 +212,8 @@ fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
 
 fn build_url(request: &PvWattsRequest, api_key: &str) -> Result<Url, PvWattsError> {
     let mut url = Url::parse(PVWATTS_ENDPOINT)?;
-    url.query_pairs_mut()
+    let mut query = url.query_pairs_mut();
+    query
         .append_pair("api_key", api_key)
         .append_pair("lat", &request.latitude.to_string())
         .append_pair("lon", &request.longitude.to_string())
@@ -162,6 +224,10 @@ fn build_url(request: &PvWattsRequest, api_key: &str) -> Result<Url, PvWattsErro
         .append_pair("tilt", &request.tilt_degrees.to_string())
         .append_pair("azimuth", &request.azimuth_degrees.to_string())
         .append_pair("timeframe", &request.timeframe);
+    if let Some(inverter_efficiency) = request.inverter_efficiency_percent {
+        query.append_pair("inv_eff", &inverter_efficiency.to_string());
+    }
+    drop(query);
     Ok(url)
 }
 
@@ -194,7 +260,18 @@ mod tests {
         let query = url.query().unwrap();
         assert!(query.contains("api_key=secret"));
         assert!(query.contains("system_capacity=10"));
+        assert!(query.contains("inv_eff=96"));
         assert!(query.contains("timeframe=monthly"));
+    }
+
+    #[test]
+    fn redacts_api_key_from_user_visible_errors() {
+        let message = "request failed for url (https://developer.nlr.gov/api/pvwatts/v8.json?api_key=secret-token&lat=40)";
+        let redacted = redact_api_key(message);
+
+        assert!(!redacted.contains("secret-token"));
+        assert!(redacted.contains("api_key=[redacted]"));
+        assert!(redacted.contains("lat=40"));
     }
 
     #[test]
@@ -207,6 +284,23 @@ mod tests {
         assert!(matches!(
             validate_request(&request),
             Err(PvWattsError::InvalidAzimuth)
+        ));
+
+        request = valid_request();
+        request.inverter_efficiency_percent = Some(99.5);
+        validate_request(&request).unwrap();
+
+        request.inverter_efficiency_percent = Some(89.9);
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidInverterEfficiency)
+        ));
+
+        request = valid_request();
+        request.inverter_efficiency_percent = Some(99.6);
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidInverterEfficiency)
         ));
 
         request = valid_request();
@@ -231,6 +325,44 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn rejects_non_finite_numeric_inputs() {
+        let mut request = valid_request();
+        request.system_capacity_kw = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidCapacity)
+        ));
+
+        request = valid_request();
+        request.system_capacity_kw = f64::INFINITY;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidCapacity)
+        ));
+
+        request = valid_request();
+        request.losses_percent = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidLosses)
+        ));
+
+        request = valid_request();
+        request.tilt_degrees = f64::INFINITY;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidTilt)
+        ));
+
+        request = valid_request();
+        request.azimuth_degrees = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidAzimuth)
+        ));
+    }
+
     fn valid_request() -> PvWattsRequest {
         PvWattsRequest {
             latitude: 40.7128,
@@ -239,6 +371,7 @@ mod tests {
             tilt_degrees: 30.0,
             azimuth_degrees: 180.0,
             losses_percent: 14.0,
+            inverter_efficiency_percent: Some(96.0),
             module_type: 0,
             array_type: 1,
             timeframe: "monthly".to_string(),

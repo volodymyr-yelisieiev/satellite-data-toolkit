@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use chrono::Utc;
+use chrono::{NaiveDateTime, Utc};
 use keyring::Entry;
 use rusqlite::{params, Connection, OptionalExtension};
 use satellite_core::{
@@ -886,10 +886,28 @@ fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
         return Err("collection id is required".to_string());
     }
     parse_eumdac_bbox(&query.bbox)?;
-    if query.start_time.trim().is_empty() || query.end_time.trim().is_empty() {
-        return Err("start and end time are required".to_string());
+    let start_time = parse_eumdac_time(&query.start_time)?;
+    let end_time = parse_eumdac_time(&query.end_time)?;
+    if start_time > end_time {
+        return Err("start time must be before or equal to end time".to_string());
     }
     Ok(())
+}
+
+fn parse_eumdac_time(value: &str) -> Result<i64, String> {
+    let clean = value.trim();
+    if clean.is_empty() {
+        return Err("start and end time are required".to_string());
+    }
+
+    if let Ok(time) = chrono::DateTime::parse_from_rfc3339(clean) {
+        return Ok(time.timestamp());
+    }
+
+    NaiveDateTime::parse_from_str(clean, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(clean, "%Y-%m-%d %H:%M:%S%.f"))
+        .map(|time| time.and_utc().timestamp())
+        .map_err(|_| "start and end time must be RFC3339 or YYYY-MM-DDTHH:MM:SS".to_string())
 }
 
 fn parse_eumdac_bbox(value: &str) -> Result<[String; 4], String> {
@@ -1076,6 +1094,29 @@ mod tests {
     }
 
     #[test]
+    fn validates_eumdac_time_range() {
+        let mut query = test_eumetsat_query();
+        validate_eumetsat_query(&query).unwrap();
+
+        query.start_time = "2024-11-10T10:00:00".to_string();
+        query.end_time = "2024-11-10T09:00:00".to_string();
+        assert!(validate_eumetsat_query(&query)
+            .unwrap_err()
+            .contains("before or equal"));
+
+        query = test_eumetsat_query();
+        query.start_time = "not-a-time".to_string();
+        assert!(validate_eumetsat_query(&query)
+            .unwrap_err()
+            .contains("RFC3339"));
+
+        query = test_eumetsat_query();
+        query.start_time = "2024-11-10T08:00:00Z".to_string();
+        query.end_time = "2024-11-10T09:00:00+00:00".to_string();
+        validate_eumetsat_query(&query).unwrap();
+    }
+
+    #[test]
     fn parses_plain_text_eumdac_products() {
         let products = parse_eumdac_products("PRODUCT_A\n\nPRODUCT_B\n");
         assert_eq!(products.len(), 2);
@@ -1233,5 +1274,15 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn test_eumetsat_query() -> EumetsatQuery {
+        EumetsatQuery {
+            collection_id: "EO:EUM:DAT:METOP:OSI-104".to_string(),
+            bbox: "51.28,51.69,0.51,0.33".to_string(),
+            start_time: "2024-11-10T08:00:00".to_string(),
+            end_time: "2024-11-10T09:00:00".to_string(),
+            limit: 20,
+        }
     }
 }

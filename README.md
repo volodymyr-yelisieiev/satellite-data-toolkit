@@ -6,8 +6,8 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 ## Reviewer Snapshot
 
-- Current package status: macOS and Windows packaging scripts are configured with checksums. GitHub-hosted Actions workflows have been removed to avoid private-repository billing failures and notification spam; local scripts are the active verification and packaging gates.
-- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, and `SECURITY.md` defines vulnerability reporting. Local `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and `.\scripts\build-windows.ps1` are the documented gates unless a free hosted, public, or self-hosted runner path is added later.
+- Current package status: macOS and Windows packaging scripts are configured with checksums, and public-repository GitHub Actions workflows build CI checks, manual package artifacts, and tag-based GitHub releases.
+- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, and `SECURITY.md` defines vulnerability reporting. `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and `.\scripts\build-windows.ps1` back the local and hosted gates.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation, and checksum-gated EUMDAC sidecar execution are implemented.
 - Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, signed/notarized EUMDAC sidecar release validation, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
@@ -200,12 +200,12 @@ Expected outputs:
 
 ```text
 target/release/bundle/macos/Satellite Data Toolkit.app
-target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.2_aarch64.dmg
 ```
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-GitHub-hosted macOS packaging workflows have been removed to avoid private-repository billing failures. Use this script locally, or add a self-hosted/free runner workflow later if needed.
+The `Package artifacts` workflow can run this build on GitHub-hosted macOS and upload the DMG/checksum as run artifacts. The `Release` workflow runs the same build for `v*` tags and uploads the DMG/checksum to the matching GitHub Release.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -225,11 +225,18 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and earlier CI produced private-review artifacts with checksums, but GitHub-hosted Windows workflows have been removed to avoid billing failures. `WINDOWS_SIGN_COMMAND` can be set in a Windows environment to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured for Windows runners, with checksum output and an MSI quiet install/uninstall smoke test. `WINDOWS_SIGN_COMMAND` can be set in a Windows environment or GitHub secret to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping broadly, run MSI and NSIS install/uninstall checks on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
 ## Local Gates And GitHub Automation
 
-GitHub-hosted Actions workflows and Dependabot configuration were removed to stop private-repository billing/spending-limit failures and email spam. The repository uses local verification as the source of evidence:
+The repository is public, so hosted GitHub Actions are restored for CI and release automation:
+
+- `CI`: runs on `main`, pull requests, and manual dispatch; verifies Ubuntu, macOS, and Windows, then runs visual/browser smoke on Ubuntu.
+- `RustSec audit`: runs on `main`, pull requests, weekly, and manual dispatch.
+- `Package artifacts`: manual workflow that uploads macOS DMG/checksum and Windows MSI/NSIS/checksum artifacts without publishing a release.
+- `Release`: runs on `v*` tag pushes or manual dispatch for an existing tag, uploads run artifacts, and creates or updates the matching GitHub Release assets.
+
+Local verification remains the fastest pre-push check:
 
 ```bash
 npm run verify
@@ -237,7 +244,7 @@ npm run visual:smoke
 ./scripts/build-macos.sh
 ```
 
-Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for the Windows packaging gate. Add GitHub Actions back only after a free path is available, such as a public repository or self-hosted runners for the required OS matrix.
+Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for an extra native Windows packaging gate when needed.
 
 The local release asset set remains:
 
@@ -248,15 +255,15 @@ Windows NSIS installer
 SHA256SUMS.txt
 ```
 
-Upload those assets to the matching GitHub release manually or from a future free/self-hosted workflow after signing gates are available.
+For release automation, create and push a tag matching `package.json`, for example `v2.1.2`. The release workflow validates the tag, builds macOS and Windows assets, uploads workflow artifacts, and publishes release assets plus `SHA256SUMS.txt`.
 
-Dependabot config is removed during this cost-control period. Run `npm audit`, `npm outdated`, `cargo audit`, and targeted dependency updates locally.
+Dependabot config remains disabled to avoid noisy automated PRs. Run `npm audit`, `npm outdated`, `cargo audit`, and targeted dependency updates locally or add Dependabot back later if the notification volume is acceptable.
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
 
-The `main` branch protection still enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions. Required status checks are removed while no GitHub-hosted checks exist; restore them only when hosted or self-hosted checks can pass without quota failures.
+The `main` branch protection should require the restored hosted checks once the first green run completes. Keep force-pushes and branch deletion blocked on `main`.
 
-Important repository state as of May 9, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line uses `v*` tags, and `v2.1.1` is currently marked as Latest to avoid sending end users to the Rust-only artifact line.
+Important repository state as of May 9, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line uses `v*` tags, and `v2.1.2` is the current release tag for the restored hosted CI/CD path.
 
 ## Review ZIP Contents
 

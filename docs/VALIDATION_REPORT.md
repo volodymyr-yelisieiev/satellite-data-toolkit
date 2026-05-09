@@ -22,10 +22,10 @@ Additional changes validated locally:
 
 - Frontend unit tests added with Vitest for shared UI/domain helpers.
 - `./scripts/verify.sh` now runs version consistency checks, Tauri API surface checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
-- Local CI gates verify the same core checks through `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and the Windows build/smoke scripts on Windows.
+- Local and hosted CI gates verify the same core checks through `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and the Windows build/smoke scripts on Windows.
 - macOS private-review DMG/checksum artifacts are produced by `./scripts/build-macos.sh`.
-- Release preflight scripts validate SemVer tag/version alignment and signing/notarization secrets before public release assets are published.
-- Repository maintenance now includes a root MIT `LICENSE` and a `SECURITY.md` coordinated disclosure policy. As of 2026-05-09, GitHub-hosted workflows, Dependabot version-update config, Dependabot automated security fixes, and required status checks are removed or disabled to avoid private-repository Actions quota failures and notification spam; local verification is the active gate.
+- Release preflight scripts validate SemVer tag/version alignment; the hosted release workflow publishes unsigned/ad-hoc artifacts when signing secrets are absent and logs explicit warnings.
+- Repository maintenance now includes a root MIT `LICENSE` and a `SECURITY.md` coordinated disclosure policy. As of 2026-05-09, GitHub-hosted workflows are restored for the public repository. Dependabot version-update config and automated security fixes remain disabled to avoid noisy automated PRs.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
 - `scripts/smoke-windows-msi.ps1` runs an MSI quiet install/uninstall smoke on Windows and writes installer logs for diagnostics.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
@@ -107,7 +107,7 @@ Bundled manifest runtime entry: 994ad4166c3bda13826998a44267ef3ddb07b5b44b0e57eb
 DMG SHA256: f206007ee4d2d911de8ade7e736d7b59a110a0ef8fdb5eeaa561075d1e7ab1a6
 ```
 
-GitHub Actions status was blocked by account billing/spending-limit before jobs started. Hosted workflows were removed after this finding to stop failed-check notifications and quota churn.
+GitHub Actions status was previously blocked by private-repository billing/spending-limit before jobs started. The repository is now public, and hosted workflows have been restored for CI, package artifacts, and release publishing.
 
 ## Executive Status
 
@@ -115,11 +115,11 @@ GitHub Actions status was blocked by account billing/spending-limit before jobs 
 | --- | --- | --- |
 | macOS app/DMG | Pass for private review | `.app` builds, EUMDAC sidecar is staged, ad-hoc codesign verifies, bundled sidecar manifest matches the post-sign sidecar hash, and DMG verifies locally. |
 | macOS public release | Not ready | Developer ID certificate/notarization secrets are not configured, so the release-certificate signing, notarization, stapling, and Gatekeeper path still needs external validation. |
-| Windows packaging | Script hardened, native rerun required | MSI/NSIS/checksum artifacts were produced by earlier CI; the current script also verifies packaged EUMDAC sidecar hash/signature expectations. Hosted Actions were removed for cost control, so a fresh pass requires a real Windows machine or self-hosted/free runner. Real Windows 10/11 install/uninstall QA is still required. |
+| Windows packaging | Script hardened, hosted rerun required | MSI/NSIS/checksum artifacts were produced by earlier CI; the current script also verifies packaged EUMDAC sidecar hash/signature expectations and is wired into hosted Windows Actions. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
 | UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with local screenshots. |
-| Repository maintenance | Cost-controlled baseline | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit scripts, and local verification/package scripts are configured. GitHub-hosted workflows and Dependabot config are removed; restore required checks only when free quota, public runners, or self-hosted runners can pass reliably. |
+| Repository maintenance | Public hosted CI baseline | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit scripts, hosted CI/package/release workflows, and local verification/package scripts are configured. Dependabot remains disabled to avoid noisy automated PRs. |
 | EUMETSAT | Partial | Sidecar command wiring, packaging-sidecar staging, and checksum-manifest trust gate exist, but live credential search/download QA still requires real EUMETSAT credentials. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, Deflate/LZW/PackBits-compressed TIFF inputs, and multi-strip layouts are covered in the pure-Rust path. |

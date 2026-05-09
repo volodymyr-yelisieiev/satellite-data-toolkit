@@ -116,7 +116,7 @@ async function runWorkflow(page) {
   await expectVisible(page.getByText("Demo EUMETSAT Product"), "EUMETSAT demo product");
   await page.getByLabel("Output Directory").fill("/demo/downloads");
   await clickButton(page, /Download Selected/i);
-  await expectVisible(page.getByText(/EUMETSAT product download started/i), "EUMETSAT download log");
+  await expectVisible(page.getByText(/EUMETSAT product download completed/i), "EUMETSAT download log");
 
   await page.getByRole("tab", { name: /NDVI Calculator/i }).click();
   await page.getByLabel("Red Band TIFF").fill("/demo/red.tif");

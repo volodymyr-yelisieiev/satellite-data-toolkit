@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "satellite-cli"
-version = "2.1.1"
+version = "2.1.2"
 dependencies = [
  "anyhow",
  "satellite-core",
@@ -2873,7 +2873,7 @@ dependencies = [
 
 [[package]]
 name = "satellite-core"
-version = "2.1.1"
+version = "2.1.2"
 dependencies = [
  "chrono",
  "reqwest 0.12.28",
@@ -2887,7 +2887,7 @@ dependencies = [
 
 [[package]]
 name = "satellite-data-toolkit"
-version = "2.1.1"
+version = "2.1.2"
 dependencies = [
  "chrono",
  "keyring",

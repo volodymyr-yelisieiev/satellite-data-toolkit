@@ -1,6 +1,6 @@
 {
   "name": "satellite-data-toolkit",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.6.2",

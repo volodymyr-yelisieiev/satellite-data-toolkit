@@ -4,8 +4,8 @@ This project is cross-platform by design, but packaging must be performed on nat
 
 Current verified state:
 
-- macOS Apple Silicon: built and locally verified; current script is checksum-producing and architecture/version agnostic.
-- Windows: earlier GitHub Actions packaging produced MSI/NSIS/checksum artifacts, but hosted workflows have been removed to avoid private-repository billing failures. Real install/uninstall QA still requires Windows 10/11 machines.
+- macOS Apple Silicon: built and locally verified; current script is checksum-producing and architecture/version agnostic. Public-repository GitHub Actions can also build and upload DMG artifacts.
+- Windows: GitHub Actions can build MSI/NSIS/checksum artifacts on `windows-latest`. Real install/uninstall QA still requires Windows 10/11 machines beyond the MSI smoke test.
 
 ## Build-Time Requirements
 
@@ -77,7 +77,7 @@ Expected outputs:
 
 ```text
 target/release/bundle/macos/Satellite Data Toolkit.app
-target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
+target/release/bundle/dmg/Satellite Data Toolkit_2.1.2_aarch64.dmg
 ```
 
 The script:
@@ -93,7 +93,7 @@ The script:
 - verifies the DMG with `hdiutil verify`;
 - writes a `.sha256` checksum next to the DMG.
 
-GitHub-hosted macOS packaging workflows have been removed to avoid private-repository billing failures. Use this script locally, or add a self-hosted/free runner workflow later if needed.
+GitHub-hosted macOS packaging is available through the manual `Package artifacts` workflow and the tag-driven `Release` workflow.
 
 Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It stages the pinned EUMDAC sidecar for the current build architecture and is suitable for private review, not public distribution.
 
@@ -113,8 +113,8 @@ For a public DMG:
 codesign --verify --deep --strict --verbose=2 "Satellite Data Toolkit.app"
 spctl --assess --type execute --verbose=4 "Satellite Data Toolkit.app"
 xcrun stapler validate "Satellite Data Toolkit.app"
-hdiutil verify "Satellite Data Toolkit_2.1.1_aarch64.dmg"
-spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg"
+hdiutil verify "Satellite Data Toolkit_2.1.2_aarch64.dmg"
+spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.2_aarch64.dmg"
 ```
 
 8. Test first launch from a clean user profile with no internet.
@@ -186,7 +186,9 @@ Current Windows status remains: earlier CI produced MSI/NSIS/checksum artifacts,
 
 ## Release Publishing
 
-GitHub-hosted release workflows have been removed to avoid private-repository billing failures. Before publishing a public release, run `scripts/check-release-tag.sh` to require an existing SemVer-style tag that matches `package.json`, then run `scripts/check-release-secrets.sh` and refuse to publish public assets unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After those gates pass, build the Windows MSI/NSIS installers and macOS DMG, create `SHA256SUMS.txt`, and upload all assets to the matching GitHub release manually or through a future free/self-hosted workflow.
+GitHub-hosted release publishing is restored now that the repository is public. Push a `v*` tag that matches `package.json`, or run the `Release` workflow manually with an existing tag. The workflow validates the tag, runs RustSec audit, builds macOS DMG and Windows MSI/NSIS installers, uploads workflow artifacts, creates a combined `SHA256SUMS.txt`, and creates or updates the matching GitHub Release.
+
+Signing secrets are optional for private-review assets and required for polished public distribution. Without them, the release workflow still publishes artifacts, but logs explicit warnings that Windows assets are unsigned and macOS assets are ad-hoc signed/not notarized.
 
 Optional release signing secrets:
 
@@ -200,9 +202,9 @@ Optional release signing secrets:
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Apple ID notarization credential path. |
 | `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8_BASE64` | App Store Connect API notarization credential path. |
 
-When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally for private-review macOS artifacts and `./scripts/build-windows.ps1` on a Windows machine for private-review Windows artifacts; public release publishing should remain blocked until signing/notarization inputs exist.
+When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, CI and local scripts produce private-review macOS and Windows artifacts, not polished public distribution builds.
 
-As of May 9, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags; `v2.1.1` is currently marked as Latest for the Tauri desktop app release line.
+As of May 9, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags; `v2.1.2` is the current release tag for the restored hosted CI/CD path.
 
 ## EUMDAC Sidecar Packaging
 
@@ -284,7 +286,7 @@ vite.config.ts
 index.html
 rust-toolchain.toml
 .node-version
-artifacts/macos/Satellite Data Toolkit_2.1.1_aarch64.dmg
+artifacts/macos/Satellite Data Toolkit_2.1.2_aarch64.dmg
 artifacts/macos/SHA256SUMS.txt
 artifacts/visual/
 ```

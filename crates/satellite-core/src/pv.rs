@@ -41,13 +41,15 @@ pub struct PvEstimate {
 }
 
 pub fn estimate_pv(input: PvEstimateInput) -> Result<PvEstimate, PvError> {
-    if input.capacity_kw <= 0.0 {
+    if !input.capacity_kw.is_finite() || input.capacity_kw <= 0.0 {
         return Err(PvError::InvalidCapacity);
     }
-    if !(0.0..100.0).contains(&input.losses_percent) {
+    if !input.losses_percent.is_finite() || !(0.0..100.0).contains(&input.losses_percent) {
         return Err(PvError::InvalidLosses);
     }
-    if !(0.0..=100.0).contains(&input.inverter_efficiency_percent) {
+    if !input.inverter_efficiency_percent.is_finite()
+        || !(0.0..=100.0).contains(&input.inverter_efficiency_percent)
+    {
         return Err(PvError::InvalidInverter);
     }
 
@@ -224,6 +226,46 @@ mod tests {
         assert!((estimate.average_power_kw - 2.5).abs() < 0.001);
         assert_eq!(estimate.used_record_count, 1);
         assert_eq!(estimate.missing_record_count, 1);
+    }
+
+    #[test]
+    fn rejects_non_finite_numeric_inputs() {
+        let base = PvEstimateInput {
+            dataset: test_dataset("kWh/m^2/day"),
+            capacity_kw: 10.0,
+            irradiance_parameter: "ALLSKY_SFC_SW_DWN".to_string(),
+            losses_percent: 0.0,
+            inverter_efficiency_percent: 100.0,
+        };
+
+        assert!(matches!(
+            estimate_pv(PvEstimateInput {
+                capacity_kw: f64::NAN,
+                ..base.clone()
+            }),
+            Err(PvError::InvalidCapacity)
+        ));
+        assert!(matches!(
+            estimate_pv(PvEstimateInput {
+                capacity_kw: f64::INFINITY,
+                ..base.clone()
+            }),
+            Err(PvError::InvalidCapacity)
+        ));
+        assert!(matches!(
+            estimate_pv(PvEstimateInput {
+                losses_percent: f64::NAN,
+                ..base.clone()
+            }),
+            Err(PvError::InvalidLosses)
+        ));
+        assert!(matches!(
+            estimate_pv(PvEstimateInput {
+                inverter_efficiency_percent: f64::INFINITY,
+                ..base
+            }),
+            Err(PvError::InvalidInverter)
+        ));
     }
 
     fn test_dataset(unit: &str) -> PowerDataset {

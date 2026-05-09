@@ -4,8 +4,8 @@ This project is cross-platform by design, but packaging must be performed on nat
 
 Current verified state:
 
-- macOS Apple Silicon: built and locally verified before this hardening pass; current script is checksum-producing and architecture/version agnostic, and the manual `macOS package` workflow produces private-review DMG/checksum artifacts.
-- Windows: GitHub Actions packaging has produced MSI/NSIS/checksum artifacts and the workflow file runs MSI quiet install/uninstall smoke when Actions is enabled. The workflow is currently disabled during the private-repository quota-control period; real install/uninstall QA still requires Windows 10/11 machines.
+- macOS Apple Silicon: built and locally verified; current script is checksum-producing and architecture/version agnostic.
+- Windows: earlier GitHub Actions packaging produced MSI/NSIS/checksum artifacts, but hosted workflows have been removed to avoid private-repository billing failures. Real install/uninstall QA still requires Windows 10/11 machines.
 
 ## Build-Time Requirements
 
@@ -61,9 +61,9 @@ npm run security:npm-build-chain
 cargo install cargo-audit --locked --version 0.22.1
 ```
 
-The GitHub RustSec audit workflow and release workflow gate install `cargo-audit` 0.22.1 and run the same script. Npm security policy is split by release risk: `security:npm-prod` requires zero known audit findings in production dependencies, and `security:npm-build-chain` audits the full dependency tree, including dev/build tooling, with a high-severity release gate.
+For Rust dependency security, install `cargo-audit` 0.22.1 locally and run the same script. Npm security policy is split by release risk: `security:npm-prod` requires zero known audit findings in production dependencies, and `security:npm-build-chain` audits the full dependency tree, including dev/build tooling, with a high-severity release gate.
 
-`npm run visual:smoke` builds the app, starts `vite preview`, and captures the `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` screens at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. CI uploads those screenshots as the `visual-smoke` artifact.
+`npm run visual:smoke` builds the app, starts `vite preview`, and captures the `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` screens at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`.
 
 ## macOS Local Review Build
 
@@ -93,7 +93,7 @@ The script:
 - verifies the DMG with `hdiutil verify`;
 - writes a `.sha256` checksum next to the DMG.
 
-The `macOS package` GitHub workflow runs this script on `macos-latest` through manual dispatch when Actions is enabled. It is currently disabled manually during the private-repository quota-control period. When enabled, it uploads `macos-dmg` and `macos-sha256sum` artifacts for private review and does not bypass the public-release signing/notarization requirements below.
+GitHub-hosted macOS packaging workflows have been removed to avoid private-repository billing failures. Use this script locally, or add a self-hosted/free runner workflow later if needed.
 
 Current limitation: without Apple Developer ID secrets, the local build is ad-hoc signed and Apple Silicon only (`aarch64`). It stages the pinned EUMDAC sidecar for the current build architecture and is suitable for private review, not public distribution.
 
@@ -123,7 +123,7 @@ spctl --assess --type open --verbose=4 "Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Known current macOS public-release gaps:
 
-- Developer ID certificate import is wired for CI, but no certificate secret is configured;
+- Developer ID certificate import is supported by the scripts, but no certificate secret is configured;
 - notarization submission/stapling is wired for Apple ID/app-password, App Store Connect API key, or a stored notary keychain profile, but no credential secrets are configured;
 - release-certificate EUMDAC sidecar signing/notarization still needs validation on a configured Apple Developer account;
 - no Intel/universal build validation.
@@ -157,7 +157,7 @@ The Tauri config currently enables:
 
 This is acceptable for a normal online installer flow. If offline install is required, switch to the appropriate fixed/runtime WebView2 strategy and test on a clean Windows image. Windows signing is skipped unless `WINDOWS_SIGN_COMMAND` is set. When it is set, `scripts/build-windows.ps1` signs the staged EUMDAC sidecar before packaging, refreshes the generated sidecar manifest to the signed sidecar hash, and injects a temporary Tauri `signCommand` config that calls `scripts/sign-windows.ps1`. The wrapper sets `WINDOWS_SIGN_FILE` to the file Tauri asked to sign, and also supports `{file}` or `%1` placeholders for signing providers that require positional substitution.
 
-The Windows build script verifies that the packaged EUMDAC sidecar hash matches the packaged manifest. When `WINDOWS_SIGN_COMMAND` is set, it also requires Authenticode-valid signatures on the app executable, packaged EUMDAC sidecar, MSI, and NSIS installer. When Actions is enabled, the Windows package workflow runs through manual dispatch, and it and the release workflow run `scripts\smoke-windows-msi.ps1` after packaging. The smoke script reads ProductCode/ProductName from the MSI, performs a quiet install on the Windows runner, verifies the uninstall registry entry, performs a quiet uninstall, and uploads install/uninstall logs as workflow artifacts.
+The Windows build script verifies that the packaged EUMDAC sidecar hash matches the packaged manifest. When `WINDOWS_SIGN_COMMAND` is set, it also requires Authenticode-valid signatures on the app executable, packaged EUMDAC sidecar, MSI, and NSIS installer. Run `scripts\smoke-windows-msi.ps1` on Windows after packaging to read ProductCode/ProductName from the MSI, perform a quiet install, verify the uninstall registry entry, and perform a quiet uninstall.
 
 ## Windows Release Checklist
 
@@ -182,11 +182,11 @@ Get-AuthenticodeSignature .\path\to\installer.exe
 Get-AuthenticodeSignature .\path\to\installer.msi
 ```
 
-Current Windows status remains: earlier CI produced MSI/NSIS/checksum artifacts, the script has signing-command plumbing, stages and manifest-checks a pinned EUMDAC sidecar before packaging, and includes MSI quiet install/uninstall smoke for Windows runners when Actions is enabled. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, release-certificate sidecar verification, and SmartScreen QA are still required before public distribution.
+Current Windows status remains: earlier CI produced MSI/NSIS/checksum artifacts, the script has signing-command plumbing, stages and manifest-checks a pinned EUMDAC sidecar before packaging, and includes MSI quiet install/uninstall smoke for Windows. Native Windows 10/11 install/uninstall, NSIS install/uninstall, Authenticode certificate configuration, release-certificate sidecar verification, and SmartScreen QA are still required before public distribution.
 
-## GitHub Release Workflow
+## Release Publishing
 
-When Actions is enabled, the `Release` workflow runs through manual dispatch with an existing tag. It first runs `scripts/check-release-tag.sh` to require an existing SemVer-style tag that matches `package.json`, then runs `scripts/check-release-secrets.sh` and refuses to publish a public release unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After those gates pass, it builds the Windows MSI/NSIS installers and macOS DMG, downloads all build artifacts into a publish job, creates `SHA256SUMS.txt`, and uploads all assets to the matching GitHub release. The workflow is currently disabled manually during the private-repository quota-control period.
+GitHub-hosted release workflows have been removed to avoid private-repository billing failures. Before publishing a public release, run `scripts/check-release-tag.sh` to require an existing SemVer-style tag that matches `package.json`, then run `scripts/check-release-secrets.sh` and refuse to publish public assets unless Windows Authenticode signing plus macOS Developer ID signing/notarization secrets are configured. After those gates pass, build the Windows MSI/NSIS installers and macOS DMG, create `SHA256SUMS.txt`, and upload all assets to the matching GitHub release manually or through a future free/self-hosted workflow.
 
 Optional release signing secrets:
 
@@ -200,7 +200,7 @@ Optional release signing secrets:
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Apple ID notarization credential path. |
 | `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8_BASE64` | App Store Connect API notarization credential path. |
 
-When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally for private-review macOS artifacts and `./scripts/build-windows.ps1` on a Windows machine for private-review Windows artifacts; the public `Release` workflow is intentionally blocked and currently disabled with the rest of GitHub-hosted Actions.
+When `APPLE_SIGNING_IDENTITY` is set and notarization credentials are present, `./scripts/build-macos.sh` requires `xcrun stapler` and Gatekeeper checks to pass. Without signing secrets, use `./scripts/build-macos.sh` locally for private-review macOS artifacts and `./scripts/build-windows.ps1` on a Windows machine for private-review Windows artifacts; public release publishing should remain blocked until signing/notarization inputs exist.
 
 As of May 9, 2026, GitHub also contains a separate `rust-pro-v3.0.0` release from the `codex/rust-pro-windows-exe` branch. Treat that as a separate portable Rust-only artifact line. Public Tauri app releases should use `v*` tags; `v2.1.1` is currently marked as Latest for the Tauri desktop app release line.
 

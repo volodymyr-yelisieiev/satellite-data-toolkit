@@ -22,13 +22,12 @@ Additional changes validated locally:
 
 - Frontend unit tests added with Vitest for shared UI/domain helpers.
 - `./scripts/verify.sh` now runs version consistency checks, Tauri API surface checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
-- CI now verifies Ubuntu, macOS, and Windows runners.
-- A `macOS package` workflow builds and uploads private-review DMG/checksum artifacts with the same local macOS packaging script through manual dispatch when Actions is enabled.
-- Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
-- Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
-- Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, and workflow files for CI/package/release automation. As of 2026-05-09, GitHub-hosted workflows, Dependabot version-update PRs, Dependabot automated security fixes, and required status checks are paused to avoid private-repository Actions quota failures and notification spam; local verification is the active gate.
+- Local CI gates verify the same core checks through `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and the Windows build/smoke scripts on Windows.
+- macOS private-review DMG/checksum artifacts are produced by `./scripts/build-macos.sh`.
+- Release preflight scripts validate SemVer tag/version alignment and signing/notarization secrets before public release assets are published.
+- Repository maintenance now includes a root MIT `LICENSE` and a `SECURITY.md` coordinated disclosure policy. As of 2026-05-09, GitHub-hosted workflows, Dependabot version-update config, Dependabot automated security fixes, and required status checks are removed or disabled to avoid private-repository Actions quota failures and notification spam; local verification is the active gate.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
-- Windows package and release workflows run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics through manual dispatch when Actions is enabled.
+- `scripts/smoke-windows-msi.ps1` runs an MSI quiet install/uninstall smoke on Windows and writes installer logs for diagnostics.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - EUMETSAT credential testing now requires both keychain slots plus a ready sidecar status instead of marking a single stored slot as ready.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.
@@ -69,7 +68,7 @@ Observed DMG SHA256:
 
 The `macOS package` workflow also passed on branch `codex/production-hardening`. Run `25576345173` passed on `2e23ecb`, ran `./scripts/build-macos.sh`, and uploaded `macos-dmg` (6,353,733 bytes) plus `macos-sha256sum` (320 bytes) artifacts for private review.
 
-Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is now automated by `npm run visual:smoke` and the CI `Visual smoke` job.
+Browser visual smoke screenshots were captured for `dashboard`, `power`, `eumetsat`, `ndvi`, `pv`, `saved`, `api`, `settings`, and `about` at 1024x720, 1280x853, and 1440x900 under `output/visual-smoke/`. The 1024x720 pass exposed sidebar/footer density issues; those were fixed with scrollable navigation, active-item scroll alignment, and compact vertical spacing for short windows. This pass is automated locally by `npm run visual:smoke`.
 
 Windows packaging was triggered with the `Windows package` workflow on branch `codex/production-hardening` after the latest hardening commits. Run `25575059659` passed on `8e0411f` and uploaded `windows-msi` (6,883,556 bytes), `windows-nsis` (5,484,150 bytes), `windows-sha256sums` (294 bytes), and `windows-msi-smoke-logs` (22,453 bytes) artifacts after the unified full verify preflight, optional signing-command no-op path, and MSI quiet install/uninstall smoke.
 
@@ -108,7 +107,7 @@ Bundled manifest runtime entry: 994ad4166c3bda13826998a44267ef3ddb07b5b44b0e57eb
 DMG SHA256: f206007ee4d2d911de8ade7e736d7b59a110a0ef8fdb5eeaa561075d1e7ab1a6
 ```
 
-GitHub Actions status for PR #16 is blocked by account billing/spending-limit before jobs start. The observed annotation is: `The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings`.
+GitHub Actions status was blocked by account billing/spending-limit before jobs started. Hosted workflows were removed after this finding to stop failed-check notifications and quota churn.
 
 ## Executive Status
 
@@ -116,11 +115,11 @@ GitHub Actions status for PR #16 is blocked by account billing/spending-limit be
 | --- | --- | --- |
 | macOS app/DMG | Pass for private review | `.app` builds, EUMDAC sidecar is staged, ad-hoc codesign verifies, bundled sidecar manifest matches the post-sign sidecar hash, and DMG verifies locally. |
 | macOS public release | Not ready | Developer ID certificate/notarization secrets are not configured, so the release-certificate signing, notarization, stapling, and Gatekeeper path still needs external validation. |
-| Windows packaging | Script hardened, native rerun blocked | MSI/NSIS/checksum artifacts were produced by the earlier manual Windows package workflow; the current script also verifies packaged EUMDAC sidecar hash/signature expectations, but GitHub Actions billing currently prevents a fresh Windows runner pass. Real Windows 10/11 install/uninstall QA is still required. |
+| Windows packaging | Script hardened, native rerun required | MSI/NSIS/checksum artifacts were produced by earlier CI; the current script also verifies packaged EUMDAC sidecar hash/signature expectations. Hosted Actions were removed for cost control, so a fresh pass requires a real Windows machine or self-hosted/free runner. Real Windows 10/11 install/uninstall QA is still required. |
 | Core build/test | Pass | TypeScript build, Rust tests/check/clippy, and production npm audit passed. |
 | NASA POWER live sample | Pass | New York 2024-05-01..2024-05-05 returned 5 normalized daily records. |
-| UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with screenshots uploaded by CI. |
-| Repository maintenance | Cost-controlled baseline | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit scripts, and CI/package/release workflow files are configured. GitHub-hosted workflows and Dependabot automation are currently paused; restore required checks only when free quota, public runners, or self-hosted runners can pass reliably. |
+| UI visual smoke | Pass | Key screens render at target widths through automated Playwright smoke with local screenshots. |
+| Repository maintenance | Cost-controlled baseline | Root MIT license, coordinated vulnerability disclosure policy, RustSec audit scripts, and local verification/package scripts are configured. GitHub-hosted workflows and Dependabot config are removed; restore required checks only when free quota, public runners, or self-hosted runners can pass reliably. |
 | EUMETSAT | Partial | Sidecar command wiring, packaging-sidecar staging, and checksum-manifest trust gate exist, but live credential search/download QA still requires real EUMETSAT credentials. |
 | PVWatts/NLR | Partial | Client and validation exist, but no real API key was available for live QA. |
 | NDVI | Production baseline | Math/tests exist; common GeoTIFF CRS/geotransform tags, `GDAL_NODATA` metadata, Deflate/LZW/PackBits-compressed TIFF inputs, and multi-strip layouts are covered in the pure-Rust path. |

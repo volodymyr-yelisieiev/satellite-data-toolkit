@@ -6,8 +6,8 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 ## Reviewer Snapshot
 
-- Current package status: macOS and Windows packaging scripts are configured with checksums; manual macOS DMG and Windows MSI/NSIS CI packaging workflows are configured, and the release workflow publishes macOS DMG plus Windows MSI/NSIS on `v*` tags only after signing/notarization preflight passes.
-- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, and `SECURITY.md` defines vulnerability reporting. GitHub-hosted workflows and Dependabot automation are currently paused to avoid private-repository Actions quota failures and notification spam; local `npm run verify` is the active gate until a free hosted, public, or self-hosted runner path is available.
+- Current package status: macOS and Windows packaging scripts are configured with checksums. GitHub-hosted Actions workflows have been removed to avoid private-repository billing failures and notification spam; local scripts are the active verification and packaging gates.
+- Current repository status: Rust workspace crates declare MIT licensing, the root `LICENSE` carries the matching MIT license text for GitHub/release consumers, and `SECURITY.md` defines vulnerability reporting. Local `npm run verify`, `npm run visual:smoke`, `./scripts/build-macos.sh`, and `.\scripts\build-windows.ps1` are the documented gates unless a free hosted, public, or self-hosted runner path is added later.
 - Current UI status: implemented desktop shell matching the requested dark toolkit structure with a production-oriented neutral palette, stable workflow tabs, request panels, response tables, logs, saved data, API slots, settings, and about screen.
 - Current backend status: NASA POWER live fetch/normalization, SQLite saved datasets, CSV/JSON export, local PV estimate, PVWatts/NLR command, API keychain slots, pure-Rust TIFF NDVI with common GeoTIFF metadata/nodata preservation, and checksum-gated EUMDAC sidecar execution are implemented.
 - Current release gaps: public macOS signing/notarization, Windows install/uninstall QA, signed/notarized EUMDAC sidecar release validation, live EUMETSAT/PVWatts verification with real credentials, and broader real-world GeoTIFF fixture QA for NDVI.
@@ -16,8 +16,8 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| macOS app/DMG | Partial release-ready | Builds locally and through manual CI packaging with ad-hoc signing. Public distribution still needs Developer ID, hardened runtime, notarization, `spctl`, and `stapler` checks. |
-| Windows MSI/NSIS | Configured with CI build | Tauri config and PowerShell build script produce MSI/NSIS and checksums. Needs Windows 10/11 install/uninstall QA. |
+| macOS app/DMG | Partial release-ready | Builds locally with ad-hoc signing and checksum output. Public distribution still needs Developer ID, hardened runtime, notarization, `spctl`, and `stapler` checks. |
+| Windows MSI/NSIS | Configured for native build | Tauri config and PowerShell build script produce MSI/NSIS and checksums on Windows. Needs Windows 10/11 install/uninstall QA. |
 | NASA POWER | Implemented | Uses JSON API, normalizes daily/hourly records, preserves units metadata, handles fill values. NASA POWER does not need an API key. |
 | Saved Data | Implemented | Saves datasets to SQLite, supports preview, delete, and CSV/JSON export. |
 | API Slots | Implemented base | Stores credentials in OS keychain under service `Satellite Data Toolkit`; no secrets are written to SQLite or logs. |
@@ -25,7 +25,7 @@ This repository is a Tauri 2 application with a React/TypeScript UI and Rust bac
 | PVWatts/NLR | Implemented, needs key QA | Uses `developer.nlr.gov` endpoint and stored `nlr_pvwatts_key`; live validation requires a real key. |
 | NDVI | Production baseline | Reads two TIFF rasters and writes Float32 NDVI TIFF. It preserves common GeoTIFF CRS/geotransform tags from the Red band, uses explicit or input `GDAL_NODATA` metadata, and has automated coverage for Deflate, LZW, PackBits, and multi-strip TIFF layouts. |
 | EUMETSAT | Partial production | Sidecar discovery/search/download hooks exist. Credentials are read from OS keychain and synced to EUMDAC before CLI calls. Packaging scripts stage pinned EUMDAC 3.1.1 standalone binaries with checksum manifests; signed sidecar QA and live credential validation are still required. |
-| Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, EUMDAC process errors redact stored secrets, and RustSec audit is wired into CI/release. Signed sidecars are still required before public release. |
+| Security posture | Baseline+ | CSP is enabled, Tauri env exposure is limited to `VITE_`, no shell/fs/http plugins are enabled, key slots are whitelisted, EUMDAC process errors redact stored secrets, and local RustSec/npm audit gates are documented. Signed sidecars are still required before public release. |
 
 ## Included Workflows
 
@@ -205,7 +205,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-The `macOS package` workflow file runs the same script on `macos-latest` through manual dispatch when GitHub Actions is enabled. It is currently disabled manually while private-repository runner quota is exhausted.
+GitHub-hosted macOS packaging workflows have been removed to avoid private-repository billing failures. Use this script locally, or add a self-hosted/free runner workflow later if needed.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -225,11 +225,11 @@ target\release\bundle\nsis\
 target\release\bundle\SHA256SUMS.txt
 ```
 
-Current status: MSI/NSIS packaging is configured and has produced CI artifacts with checksums. The Windows package and release workflow files run installer builds and CI-level MSI silent install/uninstall smoke when GitHub Actions is enabled. They are currently disabled manually while private-repository runner quota is exhausted. `WINDOWS_SIGN_COMMAND` can be set in CI to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
+Current status: MSI/NSIS packaging is configured and earlier CI produced private-review artifacts with checksums, but GitHub-hosted Windows workflows have been removed to avoid billing failures. `WINDOWS_SIGN_COMMAND` can be set in a Windows environment to Authenticode-sign Tauri Windows bundle targets through `scripts/sign-windows.ps1`; without it, signing is explicitly skipped. Before shipping, run MSI and NSIS install/uninstall smoke tests on real Windows 10/11 machines, verify WebView2 behavior, Credential Manager storage, first-run offline behavior, code signing, and SmartScreen reputation.
 
-## GitHub CI/CD
+## Local Gates And GitHub Automation
 
-The workflow files are preserved for CI, packaging, and release publishing, but repository workflows are currently `disabled_manually` to stop GitHub-hosted runner failures caused by private-repository billing/spending-limit state. While disabled, the repository uses local verification as the source of evidence:
+GitHub-hosted Actions workflows and Dependabot configuration were removed to stop private-repository billing/spending-limit failures and email spam. The repository uses local verification as the source of evidence:
 
 ```bash
 npm run verify
@@ -237,9 +237,9 @@ npm run visual:smoke
 ./scripts/build-macos.sh
 ```
 
-Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for the Windows packaging gate. Re-enable GitHub Actions only after a free path is available, such as restored free quota, a public repository, or self-hosted runners for the required OS matrix.
+Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for the Windows packaging gate. Add GitHub Actions back only after a free path is available, such as a public repository or self-hosted runners for the required OS matrix.
 
-When enabled, the default CI workflow runs local verification on Ubuntu, macOS, and Windows through manual dispatch. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts through manual dispatch. The release workflow also runs only through manual dispatch with an existing tag, builds:
+The local release asset set remains:
 
 ```text
 macOS DMG
@@ -248,13 +248,13 @@ Windows NSIS installer
 SHA256SUMS.txt
 ```
 
-and uploads those assets to the matching GitHub release.
+Upload those assets to the matching GitHub release manually or from a future free/self-hosted workflow after signing gates are available.
 
-Dependabot is configured in `.github/dependabot.yml`, but version-update PRs are paused with `open-pull-requests-limit: 0` while Actions is disabled. Dependabot automated security fixes are also disabled during this quota-control period.
+Dependabot config is removed during this cost-control period. Run `npm audit`, `npm outdated`, `cargo audit`, and targeted dependency updates locally.
 
 Security reports should follow `SECURITY.md`. Do not disclose exploit details or secrets in public issues; use GitHub private vulnerability reporting when it is enabled for the repository.
 
-The `main` branch protection still enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions. Required status checks are temporarily removed while GitHub Actions is disabled; restore them when hosted or self-hosted checks can pass without quota failures.
+The `main` branch protection still enforces admins, linear history, conversation resolution, and blocks force-pushes/deletions. Required status checks are removed while no GitHub-hosted checks exist; restore them only when hosted or self-hosted checks can pass without quota failures.
 
 Important repository state as of May 9, 2026: a separate `rust-pro-v3.0.0` release exists from the `codex/rust-pro-windows-exe` branch and points to a portable Rust-only Windows EXE. The Tauri desktop app release line uses `v*` tags, and `v2.1.1` is currently marked as Latest to avoid sending end users to the Rust-only artifact line.
 

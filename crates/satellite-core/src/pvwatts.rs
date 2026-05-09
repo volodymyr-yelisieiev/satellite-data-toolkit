@@ -125,16 +125,16 @@ fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
     if !(-180.0..=180.0).contains(&request.longitude) {
         return Err(PvWattsError::InvalidLongitude);
     }
-    if request.system_capacity_kw <= 0.0 {
+    if !request.system_capacity_kw.is_finite() || request.system_capacity_kw <= 0.0 {
         return Err(PvWattsError::InvalidCapacity);
     }
-    if !(-5.0..100.0).contains(&request.losses_percent) {
+    if !request.losses_percent.is_finite() || !(-5.0..100.0).contains(&request.losses_percent) {
         return Err(PvWattsError::InvalidLosses);
     }
-    if !(0.0..=90.0).contains(&request.tilt_degrees) {
+    if !request.tilt_degrees.is_finite() || !(0.0..=90.0).contains(&request.tilt_degrees) {
         return Err(PvWattsError::InvalidTilt);
     }
-    if !(0.0..360.0).contains(&request.azimuth_degrees) {
+    if !request.azimuth_degrees.is_finite() || !(0.0..360.0).contains(&request.azimuth_degrees) {
         return Err(PvWattsError::InvalidAzimuth);
     }
     if request.module_type > 2 {
@@ -228,6 +228,44 @@ mod tests {
         assert!(matches!(
             validate_request(&request),
             Err(PvWattsError::InvalidTimeframe)
+        ));
+    }
+
+    #[test]
+    fn rejects_non_finite_numeric_inputs() {
+        let mut request = valid_request();
+        request.system_capacity_kw = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidCapacity)
+        ));
+
+        request = valid_request();
+        request.system_capacity_kw = f64::INFINITY;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidCapacity)
+        ));
+
+        request = valid_request();
+        request.losses_percent = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidLosses)
+        ));
+
+        request = valid_request();
+        request.tilt_degrees = f64::INFINITY;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidTilt)
+        ));
+
+        request = valid_request();
+        request.azimuth_degrees = f64::NAN;
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidAzimuth)
         ));
     }
 

@@ -362,7 +362,8 @@ fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
 fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
     let sidecar = trusted_eumdac_sidecar()?;
     validate_eumetsat_query(&query)?;
-    sync_eumdac_credentials(&app, &sidecar)?;
+    let credentials = sync_eumdac_credentials(&app, &sidecar)?;
+    let secret_values = eumetsat_secret_values(&credentials);
     let limit = query.limit.clamp(1, 100).to_string();
     let bbox = parse_eumdac_bbox(&query.bbox)?;
     let mut command = Command::new(sidecar);
@@ -385,9 +386,12 @@ fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<Produ
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
-        return Err(redacted_process_error(&output.stderr));
+        return Err(redacted_process_error_with_secrets(
+            &output.stderr,
+            &secret_values,
+        ));
     }
-    let raw_output = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw_output = redacted_process_output_with_secrets(&output.stdout, &secret_values);
     Ok(ProductList {
         products: parse_eumdac_products(&raw_output),
         raw_output,
@@ -402,7 +406,8 @@ fn download_eumetsat_product(
     output_dir: String,
 ) -> Result<DownloadResult, String> {
     let sidecar = trusted_eumdac_sidecar()?;
-    sync_eumdac_credentials(&app, &sidecar)?;
+    let credentials = sync_eumdac_credentials(&app, &sidecar)?;
+    let secret_values = eumetsat_secret_values(&credentials);
     let clean_collection_id = collection_id.trim().to_string();
     let clean_product_id = product_id.trim().to_string();
     if clean_collection_id.is_empty() {
@@ -430,14 +435,17 @@ fn download_eumetsat_product(
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
-        return Err(redacted_process_error(&output.stderr));
+        return Err(redacted_process_error_with_secrets(
+            &output.stderr,
+            &secret_values,
+        ));
     }
     Ok(DownloadResult {
         collection_id: clean_collection_id,
         product_id: clean_product_id,
         output_dir: output_path.to_string_lossy().to_string(),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout: redacted_process_output_with_secrets(&output.stdout, &secret_values),
+        stderr: redacted_process_output_with_secrets(&output.stderr, &secret_values),
     })
 }
 
@@ -680,7 +688,7 @@ fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
     })
 }
 
-fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String> {
+fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<EumetsatCredentials, String> {
     let credentials = get_eumetsat_credentials()?;
     let mut command = Command::new(sidecar);
     configure_eumdac_command(app, &mut command)?;
@@ -693,7 +701,7 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
         .output()
         .map_err(|error| error.to_string())?;
     if output.status.success() {
-        return Ok(());
+        return Ok(credentials);
     }
 
     let mut fallback = Command::new(sidecar);
@@ -707,7 +715,7 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
         .output()
         .map_err(|error| error.to_string())?;
     if fallback_output.status.success() {
-        Ok(())
+        Ok(credentials)
     } else {
         Err(redacted_process_error_with_secrets(
             &fallback_output.stderr,
@@ -717,6 +725,13 @@ fn sync_eumdac_credentials(app: &AppHandle, sidecar: &Path) -> Result<(), String
             ],
         ))
     }
+}
+
+fn eumetsat_secret_values(credentials: &EumetsatCredentials) -> [&str; 2] {
+    [
+        credentials.consumer_key.as_str(),
+        credentials.consumer_secret.as_str(),
+    ]
 }
 
 fn configure_eumdac_command(app: &AppHandle, command: &mut Command) -> Result<(), String> {
@@ -967,27 +982,28 @@ fn json_products(value: serde_json::Value) -> Vec<EumetsatProduct> {
         .collect()
 }
 
-fn redacted_process_error(stderr: &[u8]) -> String {
-    redacted_process_error_with_secrets(stderr, &[])
-}
-
 fn redacted_process_error_with_secrets(stderr: &[u8], secrets: &[&str]) -> String {
-    let message = String::from_utf8_lossy(stderr);
+    let message = redacted_process_output_with_secrets(stderr, secrets);
     if message.trim().is_empty() {
         "EUMDAC command failed".to_string()
     } else {
-        let mut redacted = message
-            .replace("consumer_secret", "consumer_secret[redacted]")
-            .replace("consumer_key", "consumer_key[redacted]");
-        for secret in secrets
-            .iter()
-            .map(|secret| secret.trim())
-            .filter(|secret| !secret.is_empty())
-        {
-            redacted = redacted.replace(secret, "[redacted]");
-        }
-        redacted
+        message
     }
+}
+
+fn redacted_process_output_with_secrets(output: &[u8], secrets: &[&str]) -> String {
+    let message = String::from_utf8_lossy(output);
+    let mut redacted = message
+        .replace("consumer_secret", "consumer_secret[redacted]")
+        .replace("consumer_key", "consumer_key[redacted]");
+    for secret in secrets
+        .iter()
+        .map(|secret| secret.trim())
+        .filter(|secret| !secret.is_empty())
+    {
+        redacted = redacted.replace(secret, "[redacted]");
+    }
+    redacted
 }
 
 fn default_eumetsat_limit() -> usize {
@@ -1092,6 +1108,21 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn redacts_eumdac_secret_values_from_process_output() {
+        let message = redacted_process_output_with_secrets(
+            b"download complete for abc123 with token def456",
+            &["abc123", "def456"],
+        );
+
+        assert!(!message.contains("abc123"));
+        assert!(!message.contains("def456"));
+        assert_eq!(
+            message,
+            "download complete for [redacted] with token [redacted]"
+        );
     }
 
     #[test]

@@ -626,8 +626,14 @@ td {
 }
 
 .response-actions {
-  grid-template-columns: max-content 1fr max-content max-content max-content;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+}
+
+.response-actions > span {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .log-card {
@@ -801,8 +807,17 @@ td {
   }
 
   .top-tab {
-    min-width: 138px;
-    padding: 0 18px;
+    flex: 1 1 0;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .top-tab svg {
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
   }
 }
 

@@ -142,7 +142,7 @@ fn estimate_pv(input: PvEstimateInput) -> Result<PvEstimate, String> {
 
 #[tauri::command]
 async fn estimate_pvwatts(request: PvWattsRequest) -> Result<PvWattsResult, String> {
-    let api_key = get_api_key("nlr_pvwatts_key")?
+    let api_key = get_present_api_key("nlr_pvwatts_key")?
         .ok_or_else(|| "PVWatts/NLR API key is not stored".to_string())?;
     estimate_pvwatts_core(request, &api_key)
         .await
@@ -277,7 +277,7 @@ fn store_api_key(name: String, value: String) -> Result<(), String> {
 #[tauri::command]
 fn has_api_key(name: String) -> Result<bool, String> {
     validate_secret_name(&name)?;
-    get_api_key(&name).map(|value| value.is_some_and(|value| !value.is_empty()))
+    Ok(get_present_api_key(&name)?.is_some())
 }
 
 #[tauri::command]
@@ -297,7 +297,7 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
     validate_secret_name(&name)?;
 
     if name == "nlr_pvwatts_key" {
-        let present = get_api_key(&name)?.is_some_and(|value| !value.is_empty());
+        let present = get_present_api_key(&name)?.is_some();
         if !present {
             return Ok(CredentialTestResult {
                 slot: name,
@@ -334,9 +334,8 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
         }
     }
 
-    let key_present = get_api_key("eumetsat_consumer_key")?.is_some_and(|value| !value.is_empty());
-    let secret_present =
-        get_api_key("eumetsat_consumer_secret")?.is_some_and(|value| !value.is_empty());
+    let key_present = get_present_api_key("eumetsat_consumer_key")?.is_some();
+    let secret_present = get_present_api_key("eumetsat_consumer_secret")?.is_some();
     let sidecar_status = eumdac_sidecar_status()?;
     Ok(evaluate_eumetsat_credential_status(
         name,
@@ -627,6 +626,13 @@ fn validate_secret_name(name: &str) -> Result<(), String> {
     }
 }
 
+fn normalize_stored_secret(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let clean = value.trim();
+        (!clean.is_empty()).then(|| clean.to_string())
+    })
+}
+
 fn evaluate_eumetsat_credential_status(
     slot: String,
     key_present: bool,
@@ -667,12 +673,14 @@ fn get_api_key(name: &str) -> Result<Option<String>, String> {
     }
 }
 
+fn get_present_api_key(name: &str) -> Result<Option<String>, String> {
+    Ok(normalize_stored_secret(get_api_key(name)?))
+}
+
 fn get_eumetsat_credentials() -> Result<EumetsatCredentials, String> {
-    let consumer_key = get_api_key("eumetsat_consumer_key")?
-        .filter(|value| !value.trim().is_empty())
+    let consumer_key = get_present_api_key("eumetsat_consumer_key")?
         .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
-    let consumer_secret = get_api_key("eumetsat_consumer_secret")?
-        .filter(|value| !value.trim().is_empty())
+    let consumer_secret = get_present_api_key("eumetsat_consumer_secret")?
         .ok_or_else(|| "EUMETSAT consumer key and secret must both be stored".to_string())?;
     Ok(EumetsatCredentials {
         consumer_key,
@@ -1092,6 +1100,17 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn normalizes_stored_secret_presence() {
+        assert_eq!(normalize_stored_secret(None), None);
+        assert_eq!(normalize_stored_secret(Some(String::new())), None);
+        assert_eq!(normalize_stored_secret(Some(" \n\t ".to_string())), None);
+        assert_eq!(
+            normalize_stored_secret(Some("  live-token\n".to_string())).as_deref(),
+            Some("live-token")
+        );
     }
 
     #[test]

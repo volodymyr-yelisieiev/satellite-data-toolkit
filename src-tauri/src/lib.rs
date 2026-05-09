@@ -199,18 +199,28 @@ fn list_saved_datasets(app: AppHandle) -> Result<Vec<SavedDataset>, String> {
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
-            Ok(SavedDataset {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                created_at: row.get(3)?,
-                record_count: row.get::<_, i64>(4)? as usize,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
         })
         .map_err(|error| error.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())
+    let mut saved = Vec::new();
+    for row in rows {
+        let (id, name, kind, created_at, record_count) = row.map_err(|error| error.to_string())?;
+        saved.push(SavedDataset {
+            id,
+            name,
+            kind,
+            created_at,
+            record_count: record_count_from_db(record_count)?,
+        });
+    }
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -605,6 +615,10 @@ fn validate_dataset_for_storage(dataset: &PowerDataset) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn record_count_from_db(value: i64) -> Result<usize, String> {
+    usize::try_from(value).map_err(|_| "saved dataset record count cannot be negative".to_string())
 }
 
 fn validate_saved_name(name: &str) -> Result<String, String> {
@@ -1092,6 +1106,13 @@ mod tests {
         assert!(!message.contains("abc123"));
         assert!(!message.contains("def456"));
         assert!(message.contains("[redacted]"));
+    }
+
+    #[test]
+    fn rejects_negative_saved_dataset_record_counts() {
+        assert_eq!(record_count_from_db(0).unwrap(), 0);
+        assert_eq!(record_count_from_db(42).unwrap(), 42);
+        assert!(record_count_from_db(-1).unwrap_err().contains("negative"));
     }
 
     #[test]

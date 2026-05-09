@@ -245,6 +245,7 @@ function App() {
         tiltDegrees: pvTilt,
         azimuthDegrees: pvAzimuth,
         lossesPercent: pvLosses,
+        inverterEfficiencyPercent: pvInverter,
         moduleType: 0,
         arrayType: 1,
         timeframe: "monthly",

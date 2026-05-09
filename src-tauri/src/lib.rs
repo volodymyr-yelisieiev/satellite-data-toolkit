@@ -312,6 +312,7 @@ async fn test_api_key(name: String) -> Result<CredentialTestResult, String> {
             tilt_degrees: 30.0,
             azimuth_degrees: 180.0,
             losses_percent: 14.0,
+            inverter_efficiency_percent: Some(96.0),
             module_type: 0,
             array_type: 1,
             timeframe: "monthly".to_string(),

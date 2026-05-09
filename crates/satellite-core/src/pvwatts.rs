@@ -22,6 +22,8 @@ pub enum PvWattsError {
     InvalidTilt,
     #[error("azimuth must be at least 0 and less than 360 degrees")]
     InvalidAzimuth,
+    #[error("PVWatts inverter efficiency must be between 90 and 99.5 percent")]
+    InvalidInverterEfficiency,
     #[error("module type must be 0, 1, or 2")]
     InvalidModuleType,
     #[error("array type must be between 0 and 4")]
@@ -47,6 +49,8 @@ pub struct PvWattsRequest {
     pub tilt_degrees: f64,
     pub azimuth_degrees: f64,
     pub losses_percent: f64,
+    #[serde(default)]
+    pub inverter_efficiency_percent: Option<f64>,
     #[serde(default = "default_module_type")]
     pub module_type: u8,
     #[serde(default = "default_array_type")]
@@ -137,6 +141,12 @@ fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
     if !(0.0..360.0).contains(&request.azimuth_degrees) {
         return Err(PvWattsError::InvalidAzimuth);
     }
+    if request
+        .inverter_efficiency_percent
+        .is_some_and(|value| !(90.0..=99.5).contains(&value))
+    {
+        return Err(PvWattsError::InvalidInverterEfficiency);
+    }
     if request.module_type > 2 {
         return Err(PvWattsError::InvalidModuleType);
     }
@@ -151,7 +161,8 @@ fn validate_request(request: &PvWattsRequest) -> Result<(), PvWattsError> {
 
 fn build_url(request: &PvWattsRequest, api_key: &str) -> Result<Url, PvWattsError> {
     let mut url = Url::parse(PVWATTS_ENDPOINT)?;
-    url.query_pairs_mut()
+    let mut query = url.query_pairs_mut();
+    query
         .append_pair("api_key", api_key)
         .append_pair("lat", &request.latitude.to_string())
         .append_pair("lon", &request.longitude.to_string())
@@ -162,6 +173,10 @@ fn build_url(request: &PvWattsRequest, api_key: &str) -> Result<Url, PvWattsErro
         .append_pair("tilt", &request.tilt_degrees.to_string())
         .append_pair("azimuth", &request.azimuth_degrees.to_string())
         .append_pair("timeframe", &request.timeframe);
+    if let Some(inverter_efficiency) = request.inverter_efficiency_percent {
+        query.append_pair("inv_eff", &inverter_efficiency.to_string());
+    }
+    drop(query);
     Ok(url)
 }
 
@@ -194,6 +209,7 @@ mod tests {
         let query = url.query().unwrap();
         assert!(query.contains("api_key=secret"));
         assert!(query.contains("system_capacity=10"));
+        assert!(query.contains("inv_eff=96"));
         assert!(query.contains("timeframe=monthly"));
     }
 
@@ -207,6 +223,23 @@ mod tests {
         assert!(matches!(
             validate_request(&request),
             Err(PvWattsError::InvalidAzimuth)
+        ));
+
+        request = valid_request();
+        request.inverter_efficiency_percent = Some(99.5);
+        validate_request(&request).unwrap();
+
+        request.inverter_efficiency_percent = Some(89.9);
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidInverterEfficiency)
+        ));
+
+        request = valid_request();
+        request.inverter_efficiency_percent = Some(99.6);
+        assert!(matches!(
+            validate_request(&request),
+            Err(PvWattsError::InvalidInverterEfficiency)
         ));
 
         request = valid_request();
@@ -239,6 +272,7 @@ mod tests {
             tilt_degrees: 30.0,
             azimuth_degrees: 180.0,
             losses_percent: 14.0,
+            inverter_efficiency_percent: Some(96.0),
             module_type: 0,
             array_type: 1,
             timeframe: "monthly".to_string(),

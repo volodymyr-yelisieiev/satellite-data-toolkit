@@ -157,6 +157,7 @@ export interface PvWattsRequest {
   tiltDegrees: number;
   azimuthDegrees: number;
   lossesPercent: number;
+  inverterEfficiencyPercent: number;
   moduleType: number;
   arrayType: number;
   timeframe: string;

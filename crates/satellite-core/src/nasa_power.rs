@@ -30,6 +30,10 @@ pub enum PowerError {
     InvalidParameterName,
     #[error("temporal must be daily or hourly")]
     InvalidTemporal,
+    #[error("community must be RE, SB, or AG")]
+    InvalidCommunity,
+    #[error("time standard must be LST or UTC")]
+    InvalidTimeStandard,
     #[error("NASA POWER returned status {status}: {body}")]
     ApiStatus { status: u16, body: String },
     #[error("failed to build NASA POWER URL: {0}")]
@@ -150,19 +154,21 @@ fn build_url(request: &PowerRequest) -> Result<Url, PowerError> {
     let temporal = request.temporal.to_ascii_lowercase();
     let start = compact_date(&request.start_date).ok_or(PowerError::InvalidDate)?;
     let end = compact_date(&request.end_date).ok_or(PowerError::InvalidDate)?;
+    let community = request.community.to_ascii_uppercase();
+    let time_standard = request.time_standard.to_ascii_uppercase();
     let mut url = Url::parse(&format!(
         "https://power.larc.nasa.gov/api/temporal/{}/point",
         temporal
     ))?;
     url.query_pairs_mut()
         .append_pair("parameters", &request.parameters.join(","))
-        .append_pair("community", &request.community)
+        .append_pair("community", &community)
         .append_pair("longitude", &request.longitude.to_string())
         .append_pair("latitude", &request.latitude.to_string())
         .append_pair("start", &start)
         .append_pair("end", &end)
         .append_pair("format", "JSON")
-        .append_pair("time-standard", &request.time_standard);
+        .append_pair("time-standard", &time_standard);
     Ok(url)
 }
 
@@ -176,6 +182,14 @@ fn validate_request(request: &PowerRequest) -> Result<(), PowerError> {
     let temporal = request.temporal.to_ascii_lowercase();
     if temporal != "daily" && temporal != "hourly" {
         return Err(PowerError::InvalidTemporal);
+    }
+    let community = request.community.to_ascii_uppercase();
+    if !matches!(community.as_str(), "RE" | "SB" | "AG") {
+        return Err(PowerError::InvalidCommunity);
+    }
+    let time_standard = request.time_standard.to_ascii_uppercase();
+    if !matches!(time_standard.as_str(), "LST" | "UTC") {
+        return Err(PowerError::InvalidTimeStandard);
     }
     let max_parameters = if temporal == "hourly" { 15 } else { 20 };
     if request.parameters.is_empty() || request.parameters.len() > max_parameters {
@@ -393,7 +407,47 @@ mod tests {
     }
 
     #[test]
+    fn validates_community_and_time_standard() {
+        let mut request = valid_request();
+        request.community = "invalid".to_string();
+        assert!(matches!(
+            validate_request(&request),
+            Err(PowerError::InvalidCommunity)
+        ));
+
+        request = valid_request();
+        request.time_standard = "GMT".to_string();
+        assert!(matches!(
+            validate_request(&request),
+            Err(PowerError::InvalidTimeStandard)
+        ));
+
+        request = valid_request();
+        request.community = "re".to_string();
+        request.time_standard = "utc".to_string();
+        validate_request(&request).unwrap();
+
+        let url = build_url(&request).unwrap();
+        let query = url.query().unwrap();
+        assert!(query.contains("community=RE"));
+        assert!(query.contains("time-standard=UTC"));
+    }
+
+    #[test]
     fn normalizes_hourly_timestamp_and_preserves_raw_key() {
         assert_eq!(normalize_timestamp("2024050104"), "2024-05-01 04:00");
+    }
+
+    fn valid_request() -> PowerRequest {
+        PowerRequest {
+            latitude: 0.0,
+            longitude: 0.0,
+            start_date: "2024-05-01".to_string(),
+            end_date: "2024-05-02".to_string(),
+            parameters: vec!["T2M".to_string()],
+            temporal: "daily".to_string(),
+            community: "RE".to_string(),
+            time_standard: "LST".to_string(),
+        }
     }
 }

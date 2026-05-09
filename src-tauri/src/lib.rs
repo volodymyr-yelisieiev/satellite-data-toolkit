@@ -535,21 +535,34 @@ fn resolve_export_path(
     destination: Option<&str>,
     default_name: &str,
 ) -> Result<PathBuf, String> {
-    if let Some(destination) = destination.map(str::trim).filter(|value| !value.is_empty()) {
-        let path = PathBuf::from(destination);
-        if path.is_dir() {
-            return Ok(path.join(default_name));
-        }
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                return Err("export destination parent directory does not exist".to_string());
-            }
-        }
+    if let Some(path) = resolve_destination_path(destination, default_name)? {
         return Ok(path);
     }
     let exports_dir = app_data_dir(app)?.join("exports");
     fs::create_dir_all(&exports_dir).map_err(|error| error.to_string())?;
     Ok(exports_dir.join(default_name))
+}
+
+fn resolve_destination_path(
+    destination: Option<&str>,
+    default_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    let Some(destination) = destination.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(destination);
+    if path.is_dir() {
+        return Ok(Some(path.join(default_name)));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if !parent.exists() {
+            return Err("export destination parent directory does not exist".to_string());
+        }
+    }
+    Ok(Some(path))
 }
 
 fn dataset_to_csv(dataset: &PowerDataset) -> String {
@@ -1060,6 +1073,37 @@ mod tests {
         let csv = dataset_to_csv(&dataset);
         assert!(csv.contains("timestamp,raw_timestamp,\"A,B\""));
         assert!(csv.contains("2024-05-01,20240501,1.25"));
+    }
+
+    #[test]
+    fn resolves_explicit_export_destinations() {
+        let bare_file = resolve_destination_path(Some(" report.csv "), "default.csv").unwrap();
+        assert_eq!(bare_file, Some(PathBuf::from("report.csv")));
+
+        let dir = temp_dir_path("export_destination_dir");
+        fs::create_dir_all(&dir).unwrap();
+        let directory_destination =
+            resolve_destination_path(Some(dir.to_string_lossy().as_ref()), "default.csv").unwrap();
+        assert_eq!(directory_destination, Some(dir.join("default.csv")));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rejects_export_destination_with_missing_parent() {
+        let path = temp_dir_path("missing_export_parent").join("report.csv");
+        let error = resolve_destination_path(Some(path.to_string_lossy().as_ref()), "default.csv")
+            .unwrap_err();
+
+        assert_eq!(error, "export destination parent directory does not exist");
+    }
+
+    #[test]
+    fn ignores_blank_export_destination() {
+        assert_eq!(
+            resolve_destination_path(Some("   "), "default.csv").unwrap(),
+            None
+        );
+        assert_eq!(resolve_destination_path(None, "default.csv").unwrap(), None);
     }
 
     #[test]

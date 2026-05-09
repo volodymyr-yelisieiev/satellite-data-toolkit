@@ -206,7 +206,8 @@ fn validate_request(request: &PowerRequest) -> Result<(), PowerError> {
 
 fn is_valid_parameter(parameter: &str) -> bool {
     let trimmed = parameter.trim();
-    !trimmed.is_empty()
+    parameter == trimmed
+        && !trimmed.is_empty()
         && trimmed.len() <= 64
         && trimmed.chars().all(|character| {
             character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '/')
@@ -393,7 +394,36 @@ mod tests {
     }
 
     #[test]
+    fn rejects_untrimmed_parameter_names() {
+        let mut request = valid_request();
+        request.parameters = vec![" T2M".to_string()];
+        assert!(matches!(
+            validate_request(&request),
+            Err(PowerError::InvalidParameterName)
+        ));
+
+        request.parameters = vec!["T2M ".to_string()];
+        assert!(matches!(
+            validate_request(&request),
+            Err(PowerError::InvalidParameterName)
+        ));
+    }
+
+    #[test]
     fn normalizes_hourly_timestamp_and_preserves_raw_key() {
         assert_eq!(normalize_timestamp("2024050104"), "2024-05-01 04:00");
+    }
+
+    fn valid_request() -> PowerRequest {
+        PowerRequest {
+            latitude: 0.0,
+            longitude: 0.0,
+            start_date: "2024-05-01".to_string(),
+            end_date: "2024-05-02".to_string(),
+            parameters: vec!["T2M".to_string()],
+            temporal: "daily".to_string(),
+            community: "RE".to_string(),
+            time_standard: "LST".to_string(),
+        }
     }
 }

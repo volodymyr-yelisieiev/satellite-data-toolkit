@@ -225,7 +225,7 @@ fn load_saved_dataset(app: AppHandle, id: String) -> Result<PowerDataset, String
         .optional()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "saved dataset not found".to_string())?;
-    serde_json::from_str(&payload).map_err(|error| error.to_string())
+    parse_saved_dataset_payload(&payload)
 }
 
 #[tauri::command]
@@ -605,6 +605,16 @@ fn validate_dataset_for_storage(dataset: &PowerDataset) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn parse_saved_dataset_payload(payload: &str) -> Result<PowerDataset, String> {
+    if payload.len() > MAX_DATASET_JSON_BYTES {
+        return Err("dataset payload is too large to load".to_string());
+    }
+    let dataset =
+        serde_json::from_str::<PowerDataset>(payload).map_err(|error| error.to_string())?;
+    validate_dataset_for_storage(&dataset)?;
+    Ok(dataset)
 }
 
 fn validate_saved_name(name: &str) -> Result<String, String> {
@@ -1063,6 +1073,17 @@ mod tests {
     }
 
     #[test]
+    fn saved_dataset_payload_is_validated_after_parsing() {
+        let mut dataset = test_power_dataset();
+        dataset.records = vec![dataset.records[0].clone(); MAX_DATASET_RECORDS + 1];
+        let payload = serde_json::to_string(&dataset).unwrap();
+
+        let error = parse_saved_dataset_payload(&payload).unwrap_err();
+
+        assert!(error.contains("too many records"));
+    }
+
+    #[test]
     fn parses_comma_or_space_separated_eumdac_bbox() {
         assert_eq!(
             parse_eumdac_bbox("51.28,51.69,0.51,0.33").unwrap(),
@@ -1233,5 +1254,34 @@ mod tests {
             std::process::id(),
             nanos
         ))
+    }
+
+    fn test_power_dataset() -> PowerDataset {
+        PowerDataset {
+            request: PowerRequest {
+                latitude: 0.0,
+                longitude: 0.0,
+                start_date: "2024-05-01".to_string(),
+                end_date: "2024-05-01".to_string(),
+                parameters: vec!["ALLSKY_SFC_SW_DWN".to_string()],
+                temporal: "daily".to_string(),
+                community: "RE".to_string(),
+                time_standard: "LST".to_string(),
+            },
+            records: vec![PowerRecord {
+                raw_timestamp: "20240501".to_string(),
+                timestamp: "2024-05-01".to_string(),
+                values: BTreeMap::from([("ALLSKY_SFC_SW_DWN".to_string(), Some(5.5))]),
+            }],
+            units: BTreeMap::new(),
+            long_names: BTreeMap::new(),
+            status_code: 200,
+            api_version: "test".to_string(),
+            time_standard: "LST".to_string(),
+            fill_value: -999.0,
+            data_time_seconds: 0.0,
+            process_time_seconds: 0.0,
+            fetched_at: "now".to_string(),
+        }
     }
 }

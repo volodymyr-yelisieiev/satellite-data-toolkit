@@ -1,11 +1,30 @@
 name: Package artifacts
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/package.yml"
+      - ".node-version"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "index.html"
+      - "package-lock.json"
+      - "package.json"
+      - "scripts/build-macos.sh"
+      - "scripts/build-windows.ps1"
+      - "scripts/prepare-eumdac-sidecars.mjs"
+      - "scripts/smoke-windows-msi.ps1"
+      - "src/**"
+      - "src-tauri/**"
+      - "tsconfig*.json"
+      - "vite.config.ts"
   workflow_dispatch:
 
 concurrency:
   group: package-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

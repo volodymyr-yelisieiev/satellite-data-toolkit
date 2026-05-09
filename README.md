@@ -205,7 +205,7 @@ target/release/bundle/dmg/Satellite Data Toolkit_2.1.1_aarch64.dmg
 
 Without Apple Developer ID secrets, the script performs a local ad-hoc signature, verifies the `.app` with `codesign --verify --deep --strict`, rebuilds the DMG with an `/Applications` symlink, verifies the DMG with `hdiutil verify`, and writes a `.sha256` checksum next to the DMG. When `APPLE_SIGNING_IDENTITY` is configured, the script preserves the Tauri-signed output and can require notarization/stapling checks through `SATELLITE_REQUIRE_MACOS_NOTARIZATION=1`.
 
-The `macOS package` workflow file runs the same script on `macos-latest` for pull requests and manual dispatches when GitHub Actions is enabled. It is currently disabled manually while private-repository runner quota is exhausted.
+The `macOS package` workflow file runs the same script on `macos-latest` through manual dispatch when GitHub Actions is enabled. It is currently disabled manually while private-repository runner quota is exhausted.
 
 For public distribution, ad-hoc signing is not enough. Use Apple Developer ID signing, hardened runtime, notarization, stapling, and Gatekeeper verification.
 
@@ -239,7 +239,7 @@ npm run visual:smoke
 
 Run `.\scripts\build-windows.ps1` on a Windows 10/11 build machine for the Windows packaging gate. Re-enable GitHub Actions only after a free path is available, such as restored free quota, a public repository, or self-hosted runners for the required OS matrix.
 
-When enabled, the default CI workflow runs local verification on Ubuntu, macOS, and Windows. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts on pull requests and manual dispatches. The release workflow runs on `v*` tags or a manual workflow dispatch with an existing tag, builds:
+When enabled, the default CI workflow runs local verification on Ubuntu, macOS, and Windows through manual dispatch. Package workflows produce private-review macOS DMG and Windows MSI/NSIS artifacts through manual dispatch. The release workflow also runs only through manual dispatch with an existing tag, builds:
 
 ```text
 macOS DMG

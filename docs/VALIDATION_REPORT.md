@@ -23,12 +23,12 @@ Additional changes validated locally:
 - Frontend unit tests added with Vitest for shared UI/domain helpers.
 - `./scripts/verify.sh` now runs version consistency checks, Tauri API surface checks, TypeScript typecheck, frontend unit tests, Vite build, Rust fmt, Rust tests, Rust check, Rust clippy, and production npm audit.
 - CI now verifies Ubuntu, macOS, and Windows runners.
-- A `macOS package` workflow now builds and uploads private-review DMG/checksum artifacts with the same local macOS packaging script on pull requests and manual dispatches.
+- A `macOS package` workflow builds and uploads private-review DMG/checksum artifacts with the same local macOS packaging script through manual dispatch when Actions is enabled.
 - Release workflow now builds macOS DMG plus Windows MSI/NSIS on `v*` tags and publishes a consolidated `SHA256SUMS.txt`.
 - Release workflow now refuses to publish public assets unless `scripts/check-release-secrets.sh` confirms Windows Authenticode signing and macOS Developer ID/notarization secrets are configured.
 - Repository maintenance now includes a root MIT `LICENSE`, a `SECURITY.md` coordinated disclosure policy, and workflow files for CI/package/release automation. As of 2026-05-09, GitHub-hosted workflows, Dependabot version-update PRs, Dependabot automated security fixes, and required status checks are paused to avoid private-repository Actions quota failures and notification spam; local verification is the active gate.
 - macOS and Windows packaging scripts now avoid hardcoded artifact versions, emit checksums, and include optional signing/notarization plumbing that is skipped without release secrets.
-- Windows package and release workflows now run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics; the Windows package workflow runs on pull requests and manual dispatches.
+- Windows package and release workflows run an MSI quiet install/uninstall smoke on the Windows runner and upload installer logs for diagnostics through manual dispatch when Actions is enabled.
 - EUMETSAT sidecar calls now require a checksum-matching sidecar manifest, sync keychain credentials into EUMDAC before search/download, and redact secret values from process errors.
 - EUMETSAT credential testing now requires both keychain slots plus a ready sidecar status instead of marking a single stored slot as ready.
 - UI styling was adjusted toward a more neutral production desktop palette with stable tabs and sticky table headers.

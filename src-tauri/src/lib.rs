@@ -360,8 +360,8 @@ fn get_eumdac_sidecar_status() -> Result<EumdacSidecarStatus, String> {
 
 #[tauri::command]
 fn fetch_eumetsat_products(app: AppHandle, query: EumetsatQuery) -> Result<ProductList, String> {
-    let sidecar = trusted_eumdac_sidecar()?;
     validate_eumetsat_query(&query)?;
+    let sidecar = trusted_eumdac_sidecar()?;
     sync_eumdac_credentials(&app, &sidecar)?;
     let limit = query.limit.clamp(1, 100).to_string();
     let bbox = parse_eumdac_bbox(&query.bbox)?;
@@ -401,20 +401,10 @@ fn download_eumetsat_product(
     product_id: String,
     output_dir: String,
 ) -> Result<DownloadResult, String> {
+    let (clean_collection_id, clean_product_id, output_path) =
+        validate_eumetsat_download_request(&collection_id, &product_id, &output_dir)?;
     let sidecar = trusted_eumdac_sidecar()?;
     sync_eumdac_credentials(&app, &sidecar)?;
-    let clean_collection_id = collection_id.trim().to_string();
-    let clean_product_id = product_id.trim().to_string();
-    if clean_collection_id.is_empty() {
-        return Err("collection id is required".to_string());
-    }
-    if clean_product_id.is_empty() {
-        return Err("product id is required".to_string());
-    }
-    let output_path = PathBuf::from(output_dir.trim());
-    if !output_path.exists() || !output_path.is_dir() {
-        return Err("output directory must exist".to_string());
-    }
     let mut command = Command::new(sidecar);
     configure_eumdac_command(&app, &mut command)?;
     let output = command
@@ -892,6 +882,30 @@ fn validate_eumetsat_query(query: &EumetsatQuery) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_eumetsat_download_request(
+    collection_id: &str,
+    product_id: &str,
+    output_dir: &str,
+) -> Result<(String, String, PathBuf), String> {
+    let clean_collection_id = collection_id.trim().to_string();
+    let clean_product_id = product_id.trim().to_string();
+    if clean_collection_id.is_empty() {
+        return Err("collection id is required".to_string());
+    }
+    if clean_product_id.is_empty() {
+        return Err("product id is required".to_string());
+    }
+    let clean_output_dir = output_dir.trim();
+    if clean_output_dir.is_empty() {
+        return Err("output directory is required".to_string());
+    }
+    let output_path = PathBuf::from(clean_output_dir);
+    if !output_path.exists() || !output_path.is_dir() {
+        return Err("output directory must exist".to_string());
+    }
+    Ok((clean_collection_id, clean_product_id, output_path))
+}
+
 fn parse_eumdac_bbox(value: &str) -> Result<[String; 4], String> {
     let parts = value
         .split(|character: char| character == ',' || character.is_whitespace())
@@ -1073,6 +1087,43 @@ mod tests {
             ["51.28", "51.69", "0.51", "0.33"]
         );
         assert!(parse_eumdac_bbox("51.28,invalid,0.51,0.33").is_err());
+    }
+
+    #[test]
+    fn validates_eumdac_download_request_before_sidecar_work() {
+        assert!(validate_eumetsat_download_request(" ", "PRODUCT_A", "/tmp")
+            .unwrap_err()
+            .contains("collection id"));
+        assert!(
+            validate_eumetsat_download_request("COLLECTION", " ", "/tmp")
+                .unwrap_err()
+                .contains("product id")
+        );
+        assert!(
+            validate_eumetsat_download_request("COLLECTION", "PRODUCT_A", " ")
+                .unwrap_err()
+                .contains("output directory is required")
+        );
+        assert!(validate_eumetsat_download_request(
+            "COLLECTION",
+            "PRODUCT_A",
+            "/definitely/not/a/satellite/toolkit/path"
+        )
+        .unwrap_err()
+        .contains("must exist"));
+
+        let dir = temp_dir_path("eumdac_download_validation");
+        fs::create_dir_all(&dir).unwrap();
+        let padded_dir = format!(" {} ", dir.to_string_lossy());
+
+        let (collection, product, output_dir) =
+            validate_eumetsat_download_request(" COLLECTION ", " PRODUCT_A ", &padded_dir).unwrap();
+
+        assert_eq!(collection, "COLLECTION");
+        assert_eq!(product, "PRODUCT_A");
+        assert_eq!(output_dir, dir);
+
+        let _ = fs::remove_dir_all(output_dir);
     }
 
     #[test]
